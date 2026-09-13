@@ -12,19 +12,20 @@ echo
 
 TARGET_DEVICE="huasifei_wh3000-pro-emmc"
 
-# !!! 非常重要 !!!
-# FanchmWrt 的 Kconfig 实际使用的是带 '-' 的设备符号。
-# 这里绝对不能写成：
-# huasifei_wh3000_pro_emmc
+# FanchmWrt 实际注册的 Kconfig Device Symbol
 #
-# 正确：
+# 注意：
+# 必须使用 '-'：
+#
 # huasifei_wh3000-pro-emmc
+#
+# 不能写成：
+#
+# huasifei_wh3000_pro_emmc
 #
 TARGET_SYMBOL="huasifei_wh3000-pro-emmc"
 
-TARGET_CONFIG="CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${TARGET_SYMBOL}=y"
-
-TARGET_PACKAGE_CONFIG="CONFIG_TARGET_DEVICE_PACKAGES_mediatek_filogic_DEVICE_${TARGET_SYMBOL}="
+TARGET_CONFIG="CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_huasifei_wh3000-pro-emmc=y"
 
 CONFIG_FILE="${GITHUB_WORKSPACE}/config/wh3000pro.config"
 
@@ -36,7 +37,7 @@ echo
 
 
 # ============================================================
-# 1. 检查当前源码目录
+# 1. 检查当前工作目录
 # ============================================================
 
 echo "============================================================"
@@ -48,7 +49,7 @@ pwd
 echo
 
 if [ ! -d "target/linux/mediatek" ]; then
-    echo "❌ 错误：当前目录不是 OpenWrt/FanchmWrt 源码根目录。"
+    echo "❌ 错误：当前目录不是 FanchmWrt/OpenWrt 源码根目录。"
     echo
     echo "当前目录："
     pwd
@@ -101,7 +102,7 @@ echo
 
 
 # ============================================================
-# 4. 复制基础配置到 OpenWrt .config
+# 4. 创建 OpenWrt .config
 # ============================================================
 
 echo "============================================================"
@@ -118,23 +119,15 @@ echo
 
 
 # ============================================================
-# 5. 清理旧的 / 错误 Target 配置
+# 5. 清理旧 Target / Device 配置
 #
-# 这里非常重要。
+# 统一由本脚本重新生成，避免：
 #
-# 用户原来的配置中可能存在：
-#
-# CONFIG_TARGET_DEVICE_mediatek_filogic=y
-#
-# 或者错误的：
-#
-# CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_huasifei_wh3000_pro_emmc=y
-#
-# 或者旧设备：
-#
-# CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_xxx=y
-#
-# 全部清掉，然后由本脚本统一写入正确配置。
+# 1. 旧设备残留
+# 2. 错误的下划线 Device Symbol
+# 3. 重复 Target 配置
+# 4. OpenWrt One Profile 残留
+# 5. 错误的 Device Packages 配置
 # ============================================================
 
 echo "============================================================"
@@ -142,7 +135,7 @@ echo "5. 清理旧 Target / Device 配置"
 echo "============================================================"
 
 # ------------------------------------------------------------
-# 清理所有 MediaTek Filogic 设备选择
+# 清理所有 Filogic Device 选择
 # ------------------------------------------------------------
 
 sed -i -E \
@@ -150,7 +143,7 @@ sed -i -E \
     .config
 
 # ------------------------------------------------------------
-# 清理旧的 Target Device 总开关
+# 清理旧 Target Device 总开关
 # ------------------------------------------------------------
 
 sed -i \
@@ -158,8 +151,7 @@ sed -i \
     .config
 
 # ------------------------------------------------------------
-# 清理旧的 Target Profile
-# 防止 DEFAULT_PROFILE / OpenWrt One 被显式写入
+# 清理 Profile
 # ------------------------------------------------------------
 
 sed -i \
@@ -167,7 +159,7 @@ sed -i \
     .config
 
 # ------------------------------------------------------------
-# 清理旧的 Multi Profile
+# 清理 Multi Profile
 # ------------------------------------------------------------
 
 sed -i \
@@ -175,7 +167,7 @@ sed -i \
     .config
 
 # ------------------------------------------------------------
-# 清理旧的 Per Device RootFS
+# 清理 Per Device RootFS
 # ------------------------------------------------------------
 
 sed -i \
@@ -183,13 +175,7 @@ sed -i \
     .config
 
 # ------------------------------------------------------------
-# 清理旧的设备包配置
-#
-# 包括：
-# CONFIG_TARGET_DEVICE_PACKAGES_mediatek_filogic=""
-#
-# 以及：
-# CONFIG_TARGET_DEVICE_PACKAGES_mediatek_filogic_DEVICE_xxx=""
+# 清理所有 Filogic Device Packages
 # ------------------------------------------------------------
 
 sed -i -E \
@@ -197,13 +183,9 @@ sed -i -E \
     .config
 
 # ------------------------------------------------------------
-# 清理旧的 Target 平台配置
+# 清理 Target 平台配置
+# 防止重复配置导致：
 #
-# 防止出现重复：
-# CONFIG_TARGET_mediatek=y
-# CONFIG_TARGET_mediatek_filogic=y
-#
-# 从而导致：
 # override: TARGET_mediatek changes choice state
 # ------------------------------------------------------------
 
@@ -232,14 +214,14 @@ echo
 
 
 # ============================================================
-# 6. 写入唯一、正确的 Target 配置
+# 6. 写入唯一正确的 Target 配置
 # ============================================================
 
 echo "============================================================"
 echo "6. 写入 WH3000 Pro Target 配置"
 echo "============================================================"
 
-cat >> .config <<EOF
+cat >> .config <<'EOF'
 
 # ============================================================
 # FanchmWrt WH3000 Pro
@@ -257,20 +239,24 @@ CONFIG_TARGET_mediatek_filogic=y
 CONFIG_TARGET_MULTI_PROFILE=y
 CONFIG_TARGET_PER_DEVICE_ROOTFS=y
 
-${TARGET_CONFIG}
+CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_huasifei_wh3000-pro-emmc=y
 
-${TARGET_PACKAGE_CONFIG}""
+CONFIG_TARGET_DEVICE_PACKAGES_mediatek_filogic_DEVICE_huasifei_wh3000-pro-emmc=""
+EOF
+
+echo "✅ Target 配置写入完成"
+echo
 
 
 # ============================================================
-# 7. 统一设置 RootFS
+# 7. 设置 RootFS
 # ============================================================
 
 echo "============================================================"
 echo "7. 设置 RootFS"
 echo "============================================================"
 
-# 删除旧 RootFS 配置，避免重复
+# 清理旧值
 sed -i \
     '/^CONFIG_TARGET_ROOTFS_SQUASHFS=/d' \
     .config
@@ -279,7 +265,8 @@ sed -i \
     '/^CONFIG_TARGET_ROOTFS_PARTSIZE=/d' \
     .config
 
-cat >> .config <<EOF
+# 写入正确值
+cat >> .config <<'EOF'
 
 # ============================================================
 # RootFS
@@ -295,11 +282,38 @@ echo
 
 
 # ============================================================
-# 8. 写入前检查
+# 8. 检查 .config 是否存在非法格式
+#
+# 这里提前检查，避免直到 make defconfig 才发现：
+#
+# .config:xxx: *** missing separator
 # ============================================================
 
 echo "============================================================"
-echo "8. make defconfig 前检查"
+echo "8. 检查 .config 基本格式"
+echo "============================================================"
+
+if grep -nE \
+    '^[^#[:space:]][^=]*[^=[:space:]]$' \
+    .config \
+    | head -20; then
+
+    echo
+    echo "⚠️ 发现可能存在异常配置行。"
+    echo "上面仅用于诊断，继续执行。"
+else
+    echo "✅ 没有发现明显的异常配置行"
+fi
+
+echo
+
+
+# ============================================================
+# 9. 检查关键 Target 配置
+# ============================================================
+
+echo "============================================================"
+echo "9. make defconfig 前检查"
 echo "============================================================"
 
 echo
@@ -335,11 +349,11 @@ echo
 
 
 # ============================================================
-# 9. 强制检查是否只存在一个设备
+# 10. Device 数量检查
 # ============================================================
 
 echo "============================================================"
-echo "9. 检查 Device 数量"
+echo "10. 检查 Device 数量"
 echo "============================================================"
 
 DEVICE_COUNT="$(
@@ -352,14 +366,17 @@ DEVICE_COUNT="$(
 echo "当前 Device 数量：${DEVICE_COUNT}"
 
 if [ "${DEVICE_COUNT}" -ne 1 ]; then
+
     echo
     echo "❌ 错误：当前 .config 中不是恰好一个 Filogic Device。"
     echo
     echo "实际内容："
+
     grep -E \
         '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$' \
         .config \
         || true
+
     echo
     exit 1
 fi
@@ -369,14 +386,15 @@ echo
 
 
 # ============================================================
-# 10. 检查是否为正确设备
+# 11. 检查目标设备
 # ============================================================
 
 echo "============================================================"
-echo "10. 检查目标设备是否正确"
+echo "11. 检查目标设备是否正确"
 echo "============================================================"
 
 if ! grep -Fxq "${TARGET_CONFIG}" .config; then
+
     echo
     echo "❌ 错误：目标设备配置没有正确写入 .config。"
     echo
@@ -389,13 +407,12 @@ fi
 echo "✅ 找到正确的 WH3000 Pro Device："
 echo "${TARGET_CONFIG}"
 echo
-
 # ============================================================
-# 11. 明确检查 OpenWrt One
+# 12. 检查 OpenWrt One
 # ============================================================
 
 echo "============================================================"
-echo "11. 检查 OpenWrt One"
+echo "12. 检查 OpenWrt One"
 echo "============================================================"
 
 if grep -Eq \
@@ -417,23 +434,26 @@ echo
 
 
 # ============================================================
-# 12. 检查 FanchmWrt Device 定义
+# 13. 检查 WH3000 Pro Device 定义
 # ============================================================
 
 echo "============================================================"
-echo "12. 检查 WH3000 Pro Device 定义"
+echo "13. 检查 WH3000 Pro Device 定义"
 echo "============================================================"
 
 DEVICE_MK="target/linux/mediatek/image/filogic.mk"
 
 if [ ! -f "${DEVICE_MK}" ]; then
+
     echo "❌ 错误：找不到："
     echo "${DEVICE_MK}"
     echo
+
     exit 1
 fi
 
-echo "检查 Device/huasifei_wh3000-pro-emmc："
+echo "检查：Device/huasifei_wh3000-pro-emmc"
+echo
 
 if grep -n \
     'define Device/huasifei_wh3000-pro-emmc' \
@@ -441,10 +461,13 @@ if grep -n \
 
     echo
     echo "✅ 找到正确 Device 定义"
+
 else
+
     echo
     echo "❌ 错误：没有找到 WH3000 Pro Device 定义"
     echo
+
     exit 1
 fi
 
@@ -452,19 +475,21 @@ echo
 
 
 # ============================================================
-# 13. 检查 DTS 定义
+# 14. 检查 DTS
 # ============================================================
 
 echo "============================================================"
-echo "13. 检查 WH3000 Pro DTS"
+echo "14. 检查 WH3000 Pro DTS"
 echo "============================================================"
 
 DTS_FILE="target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro-emmc.dts"
 
 if [ ! -f "${DTS_FILE}" ]; then
+
     echo "❌ 错误：找不到 WH3000 Pro DTS："
     echo "${DTS_FILE}"
     echo
+
     exit 1
 fi
 
@@ -474,27 +499,11 @@ echo
 
 
 # ============================================================
-# 14. 执行 make defconfig
-#
-# 这是整个脚本最关键的一步。
-#
-# Kconfig 会根据源码重新整理 .config。
-#
-# 以前的问题就是：
-#
-# 写入：
-# huasifei_wh3000_pro_emmc
-#
-# 但源码实际是：
-# huasifei_wh3000-pro-emmc
-#
-# 所以 make defconfig 后错误符号直接被删除。
-#
-# 现在脚本使用正确的 '-'，因此应该保留下来。
+# 15. 执行 make defconfig
 # ============================================================
 
 echo "============================================================"
-echo "14. 执行 make defconfig"
+echo "15. 执行 make defconfig"
 echo "============================================================"
 
 echo
@@ -509,11 +518,11 @@ echo
 
 
 # ============================================================
-# 15. defconfig 后立即检查目标设备
+# 16. defconfig 后检查 Device
 # ============================================================
 
 echo "============================================================"
-echo "15. defconfig 后检查目标设备"
+echo "16. defconfig 后检查目标设备"
 echo "============================================================"
 
 echo
@@ -538,8 +547,7 @@ if ! grep -Fxq "${TARGET_CONFIG}" .config; then
     echo
     echo "但是 make defconfig 后没有找到它。"
     echo
-    echo "这意味着设备选择仍然存在配置问题。"
-    echo "本脚本将停止，不进入漫长编译。"
+    echo "脚本停止，不进入漫长编译。"
     echo
 
     exit 1
@@ -551,20 +559,18 @@ echo
 
 
 # ============================================================
-# 16. 检查 tmp/.config-target.in
-#
-# 这里可以直接确认 FanchmWrt 的 Kconfig 到底注册了什么。
+# 17. 检查生成的 Kconfig
 # ============================================================
 
 echo "============================================================"
-echo "16. 检查生成的 Kconfig"
+echo "17. 检查生成的 Kconfig"
 echo "============================================================"
 
 TARGET_IN="tmp/.config-target.in"
 
 if [ -f "${TARGET_IN}" ]; then
 
-    echo "搜索 WH3000 Pro："
+    echo "搜索 huasifei_wh3000："
     echo "------------------------------------------------------------"
 
     grep -n \
@@ -584,9 +590,10 @@ if [ -f "${TARGET_IN}" ]; then
 
     else
 
-        echo "❌ 警告：tmp/.config-target.in 中没有找到预期 Device。"
+        echo "❌ 错误：tmp/.config-target.in 中没有找到预期 Device。"
         echo
-        echo "当前所有 huasifei_wh3000 相关内容："
+
+        echo "当前 huasifei_wh3000 相关内容："
 
         grep -n \
             'huasifei_wh3000' \
@@ -608,11 +615,11 @@ echo
 
 
 # ============================================================
-# 17. 检查最终关键配置
+# 18. 最终关键配置
 # ============================================================
 
 echo "============================================================"
-echo "17. 最终关键配置"
+echo "18. 最终关键配置"
 echo "============================================================"
 
 echo
@@ -654,11 +661,11 @@ echo
 
 
 # ============================================================
-# 18. 最终 Device 数量检查
+# 19. 最终 Device 数量检查
 # ============================================================
 
 echo "============================================================"
-echo "18. 最终 Device 数量检查"
+echo "19. 最终 Device 数量检查"
 echo "============================================================"
 
 FINAL_DEVICE_COUNT="$(
@@ -675,6 +682,7 @@ if [ "${FINAL_DEVICE_COUNT}" -ne 1 ]; then
     echo
     echo "❌ 错误：最终 Device 数量不是 1。"
     echo
+
     grep -E \
         '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$' \
         .config \
@@ -689,11 +697,11 @@ echo
 
 
 # ============================================================
-# 19. 最终设备名称检查
+# 20. 最终设备名称检查
 # ============================================================
 
 echo "============================================================"
-echo "19. 最终设备名称检查"
+echo "20. 最终设备名称检查"
 echo "============================================================"
 
 FINAL_DEVICE="$(
@@ -710,11 +718,15 @@ if [ "${FINAL_DEVICE}" != "${TARGET_CONFIG}" ]; then
 
     echo "❌ 错误：最终设备不是 WH3000 Pro。"
     echo
+
     echo "期望："
     echo "${TARGET_CONFIG}"
+
     echo
+
     echo "实际："
     echo "${FINAL_DEVICE}"
+
     echo
 
     exit 1
@@ -725,36 +737,77 @@ echo
 
 
 # ============================================================
-# 20. 最终成功
+# 21. 最终检查 .config 是否存在明显非法行
 # ============================================================
 
 echo "============================================================"
-echo "                 ✅ PREPARE 成功"
+echo "21. 最终 .config 格式检查"
+echo "============================================================"
+
+BAD_LINES="$(
+    grep -nE \
+        '^[^#[:space:]][^=]*[^=[:space:]]$' \
+        .config \
+        || true
+)"
+
+if [ -n "${BAD_LINES}" ]; then
+
+    echo "⚠️ 检测到可能异常的配置行："
+    echo "${BAD_LINES}"
+    echo
+    echo "请检查上面的内容。"
+    echo
+
+else
+
+    echo "✅ .config 格式检查通过"
+
+fi
+
+echo
+
+
+# ============================================================
+# 22. 最终成功
+# ============================================================
+
+echo "============================================================"
+echo "              ✅ PREPARE 成功"
 echo "============================================================"
 echo
-echo "设备：        ${TARGET_DEVICE}"
-echo "平台：        mediatek / filogic"
-echo "设备 Symbol： ${TARGET_SYMBOL}"
+echo "设备："
+echo "  ${TARGET_DEVICE}"
 echo
-echo "Kconfig："
-echo "${TARGET_CONFIG}"
+echo "平台："
+echo "  mediatek / filogic"
+echo
+echo "Kconfig Device Symbol："
+echo "  ${TARGET_SYMBOL}"
+echo
+echo "最终 Device 配置："
+echo "  ${TARGET_CONFIG}"
 echo
 echo "DTS："
-echo "mt7981b-huasifei-wh3000-pro-emmc.dts"
+echo "  mt7981b-huasifei-wh3000-pro-emmc.dts"
 echo
 echo "RootFS："
-echo "SquashFS / 448 MB"
+echo "  SquashFS"
+echo
+echo "RootFS PartSize："
+echo "  448 MB"
 echo
 echo "Multi Profile："
-echo "启用"
+echo "  enabled"
 echo
 echo "Per Device RootFS："
-echo "启用"
+echo "  enabled"
 echo
 echo "OpenWrt One："
-echo "未选择"
+echo "  未选择"
 echo
 echo "============================================================"
+echo "       WH3000 Pro 配置准备完成"
 echo "       可以进入后续 make 编译阶段"
 echo "============================================================"
 echo
