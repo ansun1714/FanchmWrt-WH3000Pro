@@ -2,7 +2,7 @@
 set -euo pipefail
 
 OPENWRT_DIR="${GITHUB_WORKSPACE}/openwrt"
-TARGET_DEVICE="${DEVICE:-huasifei-wh3000-pro-emmc}"
+TARGET_DEVICE="${DEVICE:-huasifei_wh3000-pro-emmc}"
 
 DEVICE_MK="target/linux/mediatek/image/filogic.mk"
 DTS_EMMC="target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro-emmc.dts"
