@@ -372,20 +372,20 @@ jobs:
           echo
           echo "Device:"
           grep -n -A18 -B2 \
-            "^define Device/huasifei-wh3000-pro-emmc$" \
+            "^define Device/huasifei_wh3000-pro-emmc$" \
             "${DEVICE_MK}"
 
           echo
           echo "TARGET_DEVICES:"
           grep -n \
-            "^TARGET_DEVICES += huasifei-wh3000-pro-emmc$" \
+            "^TARGET_DEVICES += huasifei_wh3000-pro-emmc$" \
             "${DEVICE_MK}"
 
           echo
           echo "DTS:"
           ls -lh \
-            target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro-emmc.dts \
-            target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro.dtsi
+            target/linux/mediatek/dts/mt7981b-huasifei_wh3000-pro-emmc.dts \
+            target/linux/mediatek/dts/mt7981b-huasifei_wh3000-pro.dtsi
 
           echo
           echo "============================================================"
