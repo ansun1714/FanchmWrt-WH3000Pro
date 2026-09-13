@@ -483,7 +483,8 @@ echo "✅ openwrt_one not selected."
 
 
 # ============================================================
-# 16. 验证平台
+# ============================================================
+# 16. Verify target platform
 # ============================================================
 
 echo
@@ -492,10 +493,26 @@ echo " 12. Verify target platform"
 echo "============================================================"
 
 
+# ============================================================
+# 注意：
+#
+# 不强制要求 CONFIG_TARGET_arm=y
+#
+# OpenWrt/FanchmWrt 的最终 .config 中，
+# ARM 平台可能通过 TARGET_BOARD / TARGET_SUBTARGET
+# 以及上层 Kconfig choice 表达。
+#
+# 真正关键的是：
+#
+#   CONFIG_TARGET_mediatek=y
+#   CONFIG_TARGET_mediatek_filogic=y
+#   CONFIG_TARGET_DEVICE_mediatek_filogic=y
+#   WH3000 Pro eMMC DEVICE=y
+#
+# ============================================================
+
+
 REQUIRED_CONFIGS=(
-    "CONFIG_TARGET_arm=y"
-    'CONFIG_TARGET_BOARD="mediatek"'
-    'CONFIG_TARGET_SUBTARGET="filogic"'
     "CONFIG_TARGET_mediatek=y"
     "CONFIG_TARGET_mediatek_filogic=y"
     "CONFIG_TARGET_DEVICE_mediatek_filogic=y"
@@ -512,8 +529,16 @@ for REQUIRED in "${REQUIRED_CONFIGS[@]}"; do
         echo
         echo "❌ FATAL ERROR"
         echo
-        echo "Missing:"
+        echo "Missing required target configuration:"
         echo "${REQUIRED}"
+
+        echo
+        echo "Current target configuration:"
+        grep \
+            -E \
+            '^CONFIG_TARGET_(BOARD|SUBTARGET|mediatek|DEVICE_mediatek)' \
+            .config \
+            || true
 
         exit 1
     fi
@@ -521,8 +546,133 @@ for REQUIRED in "${REQUIRED_CONFIGS[@]}"; do
 done
 
 
-echo "✅ Platform configuration verified."
+echo
+echo "✅ MediaTek target verified."
+echo "✅ Filogic subtarget verified."
+echo "✅ Device framework verified."
 
+
+# ============================================================
+# 17. Selected packages
+# ============================================================
+
+echo
+echo "============================================================"
+echo " 13. Selected packages"
+echo "============================================================"
+
+
+grep \
+    -E \
+    '^CONFIG_PACKAGE_(luci-app-qmodem-next|luci-app-lucky|lucky|dockerd|containerd|runc|docker)=' \
+    .config \
+    || true
+
+
+# ============================================================
+# 18. Final selected device
+# ============================================================
+
+echo
+echo "============================================================"
+echo " FINAL SELECTED DEVICE"
+echo "============================================================"
+
+
+grep \
+    '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$' \
+    .config
+
+
+# ============================================================
+# 19. Final exact verification
+# ============================================================
+
+echo
+echo "============================================================"
+echo " 14. Final exact verification"
+echo "============================================================"
+
+
+FINAL_DEVICE_COUNT="$(
+    grep -Ec \
+        '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$' \
+        .config \
+        || true
+)"
+
+
+if [ "${FINAL_DEVICE_COUNT}" -ne 1 ]; then
+
+    echo
+    echo "❌ FATAL ERROR"
+    echo
+    echo "Expected exactly one Filogic device."
+    echo "Found: ${FINAL_DEVICE_COUNT}"
+
+    exit 1
+fi
+
+
+if ! grep \
+    -qF \
+    "${TARGET_CONFIG}" \
+    .config; then
+
+    echo
+    echo "❌ FATAL ERROR"
+    echo
+    echo "Final target is NOT WH3000 Pro eMMC."
+
+    exit 1
+fi
+
+
+if grep \
+    -q \
+    '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_openwrt_one=y$' \
+    .config; then
+
+    echo
+    echo "❌ FATAL ERROR"
+    echo
+    echo "openwrt_one detected."
+
+    exit 1
+fi
+
+
+echo
+echo "============================================================"
+echo " ✅ PREPARE PASSED"
+echo "============================================================"
+
+echo
+echo "Exact device:"
+echo "${TARGET_DEVICE}"
+
+echo
+echo "Exact Kconfig:"
+echo "${TARGET_CONFIG}"
+
+echo
+echo "Platform:"
+echo "mediatek / filogic"
+
+echo
+echo "eMMC DTS:"
+echo "mt7981b-huasifei-wh3000-pro-emmc.dts"
+
+echo
+echo "OpenWrt One:"
+echo "NOT selected"
+
+echo
+echo "Important:"
+echo "No make defconfig will be executed after this point."
+
+echo
+echo "============================================================"
 
 # ============================================================
 # 17. 显示重要软件包
