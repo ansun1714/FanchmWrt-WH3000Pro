@@ -1,0 +1,1 @@
+FanchmWrt-WH3000Pro\n\n.github/workflows/build.yml\nREADME.md\nconfig/wh3000pro.config\ncustom-packages/README.md\nscripts/diy-part1.sh\nscripts/diy-part2.sh\nscripts/prepare.sh\nscripts/select-device.sh\n\nImportant: first build validates hardware + QModem + Lucky + Docker before adding IPTV/MSD/rtp2httpd.\n
