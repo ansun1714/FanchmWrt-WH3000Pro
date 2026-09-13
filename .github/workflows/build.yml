@@ -455,7 +455,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          TARGET_CONFIG="CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_huasifei_wh3000_pro_emmc=y"
+          TARGET_CONFIG="CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_huasifei_wh3000-pro-emmc=y"
 
           echo "============================================================"
           echo " .config 最终检查"
