@@ -227,11 +227,28 @@ echo "============================================================"
 echo " 7. 清理旧 Filogic Device"
 echo "============================================================"
 
+# 删除所有 Filogic Device 选择
 sed -i \
-    '/^CONFIG_TARGET_mediatek_filogic_DEVICE_.*=y$/d' \
+    '/^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_/d' \
     .config
 
-echo "✅ 已清除旧 Filogic Device"
+# 再明确删除可能存在的错误 WH3000 Pro 配置
+sed -i \
+    '/^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_huasifei-wh3000-pro-emmc=/d' \
+    .config
+
+sed -i \
+    '/^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_huasifei_wh3000_pro_emmc=/d' \
+    .config
+
+echo "✅ 已清除所有旧 Filogic Device"
+
+echo
+echo "清理后检查:"
+grep -E \
+    '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_' \
+    .config \
+    || echo "（当前没有 Filogic Device）"
 
 # ============================================================
 # 8. 清理 OpenWrt One
