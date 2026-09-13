@@ -6,25 +6,39 @@ set -euo pipefail
 # FanchmWrt WH3000 Pro eMMC
 # prepare.sh
 #
-# 最终版
+# FINAL VERSION
 #
 # 核心目标：
 #   huasifei_wh3000-pro-emmc
 #
 # 核心原则：
-#   1. 检查 WH3000 Pro 设备定义
-#   2. 检查 eMMC DTS
-#   3. 复制基础配置
-#   4. make defconfig
-#   5. 清理 Kconfig 自动选择的 Filogic DEVICE
-#   6. 强制写入 WH3000 Pro eMMC
-#   7. 强制写入后不再运行 defconfig
-#   8. 最终严格验证
+#
+#   1. 检查 WH3000 Pro Device 定义
+#   2. 检查 WH3000 Pro eMMC DTS
+#   3. 检查公共 DTS
+#   4. 检查 modem-power
+#   5. 复制基础配置
+#   6. 清理旧 DEVICE
+#   7. 执行一次 make defconfig
+#   8. 清理 Kconfig 自动选择的 DEVICE
+#   9. 强制写入 WH3000 Pro eMMC DEVICE
+#  10. 强制写入后不再执行任何 defconfig
+#  11. 严格验证最终目标
+#
+# 非常重要：
+#
+# 本脚本结束以后：
+#
+#   禁止 make defconfig
+#   禁止 make olddefconfig
+#   禁止 make menuconfig
+#
+# 否则可能重新改变 DEVICE 选择。
 # ============================================================
 
 
 # ============================================================
-# 变量
+# 0. Variables
 # ============================================================
 
 OPENWRT_DIR="${GITHUB_WORKSPACE}/openwrt"
@@ -39,39 +53,69 @@ TARGET_CONFIG="CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${TARGET_SYMBOL}=y"
 
 DEVICE_MK="target/linux/mediatek/image/filogic.mk"
 
-DTS_EMMC="target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro-emmc.dts"
+DTS_EMMC="target/linux/mediatek/dts/mt7981b-huasifei_wh3000-pro-emmc.dts"
 
-DTS_COMMON="target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro.dtsi"
+DTS_COMMON="target/linux/mediatek/dts/mt7981b-huasifei_wh3000-pro.dtsi"
 
+
+# ============================================================
+# 0.1 Enter OpenWrt
+# ============================================================
 
 cd "${OPENWRT_DIR}"
 
 
+# ============================================================
+# Header
+# ============================================================
+
+echo
 echo "============================================================"
-echo " FanchmWrt WH3000 Pro | Prepare"
+echo " FanchmWrt WH3000 Pro eMMC | PREPARE"
 echo "============================================================"
 
 echo
-echo "Target:"
+echo "OpenWrt directory:"
+echo "${OPENWRT_DIR}"
+
+echo
+echo "Target device:"
 echo "${TARGET_DEVICE}"
 
 echo
-echo "Kconfig:"
+echo "Target symbol:"
+echo "${TARGET_SYMBOL}"
+
+echo
+echo "Expected Kconfig:"
 echo "${TARGET_CONFIG}"
 
 
 # ============================================================
-# 1. 检查 filogic.mk
+# 1. Verify Device Makefile
 # ============================================================
 
 echo
 echo "============================================================"
-echo " 1. Verify WH3000 Pro source target"
+echo " 1. Verify WH3000 Pro Device definition"
 echo "============================================================"
 
 
+if [ ! -f "${DEVICE_MK}" ]; then
+
+    echo
+    echo "❌ FATAL ERROR"
+    echo
+    echo "Device Makefile not found:"
+    echo "${DEVICE_MK}"
+
+    exit 1
+fi
+
+
 echo
-echo "Checking Device definition..."
+echo "Checking:"
+echo "${DEVICE_MK}"
 
 
 if ! grep -q \
@@ -79,7 +123,8 @@ if ! grep -q \
     "${DEVICE_MK}"; then
 
     echo
-    echo "❌ ERROR:"
+    echo "❌ FATAL ERROR"
+    echo
     echo "Device definition not found:"
     echo "${TARGET_DEVICE}"
 
@@ -96,15 +141,18 @@ if ! grep -q \
 fi
 
 
-echo "✅ Device definition exists."
+echo
+echo "✅ WH3000 Pro Device definition exists."
 
 
 # ============================================================
-# 2. 显示完整 Device 定义
+# 2. Display Device definition
 # ============================================================
 
 echo
-echo "WH3000 Pro Device definition:"
+echo "============================================================"
+echo " 2. WH3000 Pro Device definition"
+echo "============================================================"
 
 
 awk \
@@ -113,21 +161,13 @@ awk \
 
 
 # ============================================================
-# 3. 检查 TARGET_DEVICES 注册
-#
-# 不再要求必须是单独一整行。
-#
-# 允许：
-#
-# TARGET_DEVICES += huasifei_wh3000-pro-emmc
-#
-# TARGET_DEVICES += huasifei_wh3000-pro-emmc \
-#
-# 或多个 TARGET_DEVICES 写法。
+# 3. Verify TARGET_DEVICES registration
 # ============================================================
 
 echo
-echo "Checking TARGET_DEVICES registration..."
+echo "============================================================"
+echo " 3. Verify TARGET_DEVICES registration"
+echo "============================================================"
 
 
 if grep \
@@ -135,6 +175,7 @@ if grep \
     "TARGET_DEVICES[[:space:]]*\+=.*${TARGET_DEVICE}" \
     "${DEVICE_MK}"; then
 
+    echo
     echo "✅ TARGET_DEVICES registration found."
 
 else
@@ -143,7 +184,7 @@ else
     echo "⚠️ Direct TARGET_DEVICES registration not found."
 
     echo
-    echo "Searching all references..."
+    echo "Searching all references:"
 
     grep \
         -n \
@@ -153,26 +194,27 @@ else
 
     echo
     echo "NOTE:"
-    echo "The Device definition exists, so continue."
-    echo "Final target selection will be verified through Kconfig."
+    echo "Device definition exists."
+    echo "Continue with Kconfig verification."
 
 fi
 
 
 # ============================================================
-# 4. 检查 eMMC DTS
+# 4. Verify eMMC DTS
 # ============================================================
 
 echo
 echo "============================================================"
-echo " 2. Verify WH3000 Pro eMMC DTS"
+echo " 4. Verify WH3000 Pro eMMC DTS"
 echo "============================================================"
 
 
 if [ ! -f "${DTS_EMMC}" ]; then
 
     echo
-    echo "❌ ERROR:"
+    echo "❌ FATAL ERROR"
+    echo
     echo "Missing eMMC DTS:"
     echo "${DTS_EMMC}"
 
@@ -180,70 +222,98 @@ if [ ! -f "${DTS_EMMC}" ]; then
 fi
 
 
+echo
 echo "✅ eMMC DTS exists:"
 echo "${DTS_EMMC}"
 
 
 # ============================================================
-# 5. 检查公共 DTS
+# 5. Verify common WH3000 Pro DTS
 # ============================================================
+
+echo
+echo "============================================================"
+echo " 5. Verify common WH3000 Pro DTS"
+echo "============================================================"
+
 
 if [ ! -f "${DTS_COMMON}" ]; then
 
     echo
-    echo "❌ ERROR:"
-    echo "Missing common WH3000 Pro DTS:"
+    echo "❌ FATAL ERROR"
+    echo
+    echo "Missing common DTS:"
     echo "${DTS_COMMON}"
 
     exit 1
 fi
 
 
-echo "✅ Common WH3000 Pro DTS exists."
+echo
+echo "✅ Common WH3000 Pro DTS exists:"
+echo "${DTS_COMMON}"
 
 
 # ============================================================
-# 6. 检查 modem-power
+# 6. Verify modem-power
 # ============================================================
 
 echo
-echo "Checking modem-power definition..."
+echo "============================================================"
+echo " 6. Verify modem-power"
+echo "============================================================"
 
 
-if grep -q \
+echo
+echo "Searching modem-power in common DTS..."
+
+
+if grep \
+    -q \
     "modem-power" \
     "${DTS_COMMON}"; then
 
-    echo "✅ modem-power found."
+    echo
+    echo "✅ modem-power definition found."
 
 else
 
+    echo
     echo "⚠️ modem-power node not found."
-    echo "Continuing because DTS itself exists."
+
+    echo
+    echo "This is NOT treated as a fatal error."
+
+    echo "DTS exists, so continue."
 
 fi
 
 
-echo
-echo "============================================================"
-echo " ✅ Source target verification PASSED"
-echo "============================================================"
-
-
 # ============================================================
-# 7. Copy base config
+# 7. Source verification passed
 # ============================================================
 
 echo
 echo "============================================================"
-echo " 3. Copy base config"
+echo " ✅ SOURCE TARGET VERIFICATION PASSED"
+echo "============================================================"
+
+
+# ============================================================
+# 8. Verify config file
+# ============================================================
+
+echo
+echo "============================================================"
+echo " 7. Verify base config"
 echo "============================================================"
 
 
 if [ ! -f "${CONFIG_FILE}" ]; then
 
     echo
-    echo "❌ ERROR:"
+    echo "❌ FATAL ERROR"
+    echo
     echo "Config file not found:"
     echo "${CONFIG_FILE}"
 
@@ -251,31 +321,46 @@ if [ ! -f "${CONFIG_FILE}" ]; then
 fi
 
 
+echo
+echo "Config file:"
+echo "${CONFIG_FILE}"
+
+
+# ============================================================
+# 9. Copy base config
+# ============================================================
+
+echo
+echo "============================================================"
+echo " 8. Copy base config"
+echo "============================================================"
+
+
 cp \
     "${CONFIG_FILE}" \
     .config
 
 
+echo
 echo "✅ Base config copied."
 
 
 # ============================================================
-# 8. 清理旧的 Filogic DEVICE
+# 10. Normalize old DEVICE selections
 #
-# 注意：
+# 这里只清理具体 DEVICE。
 #
-# 不动：
+# 不删除：
 #
 # CONFIG_TARGET_mediatek
 # CONFIG_TARGET_mediatek_filogic
 # CONFIG_TARGET_DEVICE_mediatek_filogic
 #
-# 只清理具体 DEVICE。
 # ============================================================
 
 echo
 echo "============================================================"
-echo " 4. Normalize device selection"
+echo " 9. Normalize DEVICE selection"
 echo "============================================================"
 
 
@@ -285,7 +370,7 @@ sed -i \
 
 
 echo
-echo "Device selections before defconfig:"
+echo "DEVICE selections before defconfig:"
 
 
 grep \
@@ -295,12 +380,22 @@ grep \
 
 
 # ============================================================
-# 9. make defconfig
+# 11. make defconfig
+#
+# 这是本脚本唯一一次 defconfig。
+#
+# defconfig 的作用：
+#   让基础配置完成 Kconfig 依赖解析。
+#
+# 注意：
+#   defconfig 可能自动选择一个默认 DEVICE。
+#
+# 后面我们会清理它。
 # ============================================================
 
 echo
 echo "============================================================"
-echo " 5. make defconfig"
+echo " 10. make defconfig"
 echo "============================================================"
 
 
@@ -312,13 +407,30 @@ echo "✅ make defconfig completed."
 
 
 # ============================================================
-# 10. 显示 Kconfig 默认选择
+# 12. Show Kconfig selected DEVICE
 # ============================================================
 
 echo
 echo "============================================================"
-echo " 6. Kconfig selected device"
+echo " 11. Kconfig selected DEVICE"
 echo "============================================================"
+
+
+KCONFIG_DEVICE_COUNT="$(
+    grep -Ec \
+        '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$' \
+        .config \
+        || true
+)"
+
+
+echo
+echo "Kconfig selected device count:"
+echo "${KCONFIG_DEVICE_COUNT}"
+
+
+echo
+echo "Kconfig selected devices:"
 
 
 grep \
@@ -328,12 +440,12 @@ grep \
 
 
 # ============================================================
-# 11. 清理 Kconfig 默认 DEVICE
+# 13. Remove Kconfig selected DEVICE
 # ============================================================
 
 echo
 echo "============================================================"
-echo " 7. Remove Kconfig default device"
+echo " 12. Remove Kconfig selected DEVICE"
 echo "============================================================"
 
 
@@ -353,12 +465,20 @@ grep \
 
 
 # ============================================================
-# 12. 强制 WH3000 Pro eMMC
+# 14. Force exact WH3000 Pro eMMC
+#
+# 重要：
+#
+# 从这里开始：
+#
+# 不再运行 make defconfig
+# 不再运行 make olddefconfig
+#
 # ============================================================
 
 echo
 echo "============================================================"
-echo " 8. Force WH3000 Pro eMMC target"
+echo " 13. Force WH3000 Pro eMMC target"
 echo "============================================================"
 
 
@@ -366,6 +486,7 @@ cat >> .config <<EOF
 
 # ============================================================
 # FanchmWrt WH3000 Pro eMMC
+# Forced by prepare.sh AFTER defconfig
 # ============================================================
 
 ${TARGET_CONFIG}
@@ -379,12 +500,12 @@ echo "${TARGET_CONFIG}"
 
 
 # ============================================================
-# 13. 验证 DEVICE 数量
+# 15. Verify DEVICE count
 # ============================================================
 
 echo
 echo "============================================================"
-echo " 9. Verify selected device count"
+echo " 14. Verify selected DEVICE count"
 echo "============================================================"
 
 
@@ -420,13 +541,17 @@ if [ "${DEVICE_COUNT}" -ne 1 ]; then
 fi
 
 
+echo
+echo "✅ Exactly one Filogic device selected."
+
+
 # ============================================================
-# 14. 验证精确 WH3000 Pro
+# 16. Verify exact WH3000 Pro target
 # ============================================================
 
 echo
 echo "============================================================"
-echo " 10. Verify exact WH3000 Pro target"
+echo " 15. Verify exact WH3000 Pro target"
 echo "============================================================"
 
 
@@ -438,7 +563,7 @@ if ! grep \
     echo
     echo "❌ FATAL ERROR"
     echo
-    echo "WH3000 Pro eMMC target was not selected."
+    echo "WH3000 Pro eMMC target was NOT selected."
 
     echo
     echo "Current target:"
@@ -452,16 +577,17 @@ if ! grep \
 fi
 
 
+echo
 echo "✅ Exact WH3000 Pro eMMC target selected."
 
 
 # ============================================================
-# 15. Reject OpenWrt One
+# 17. Reject OpenWrt One
 # ============================================================
 
 echo
 echo "============================================================"
-echo " 11. Reject OpenWrt One"
+echo " 16. Reject OpenWrt One"
 echo "============================================================"
 
 
@@ -473,43 +599,35 @@ if grep \
     echo
     echo "❌ FATAL ERROR"
     echo
-    echo "openwrt_one is selected!"
+    echo "OpenWrt One is selected!"
 
     exit 1
 fi
 
 
-echo "✅ openwrt_one not selected."
-
-
-# ============================================================
-# ============================================================
-# 16. Verify target platform
-# ============================================================
-
 echo
-echo "============================================================"
-echo " 12. Verify target platform"
-echo "============================================================"
+echo "✅ OpenWrt One not selected."
 
 
 # ============================================================
+# 18. Verify target platform
+#
 # 注意：
 #
-# 不强制要求 CONFIG_TARGET_arm=y
-#
-# OpenWrt/FanchmWrt 的最终 .config 中，
-# ARM 平台可能通过 TARGET_BOARD / TARGET_SUBTARGET
-# 以及上层 Kconfig choice 表达。
+# 不要求 CONFIG_TARGET_arm=y
 #
 # 真正关键的是：
 #
 #   CONFIG_TARGET_mediatek=y
 #   CONFIG_TARGET_mediatek_filogic=y
 #   CONFIG_TARGET_DEVICE_mediatek_filogic=y
-#   WH3000 Pro eMMC DEVICE=y
 #
 # ============================================================
+
+echo
+echo "============================================================"
+echo " 17. Verify target platform"
+echo "============================================================"
 
 
 REQUIRED_CONFIGS=(
@@ -534,6 +652,7 @@ for REQUIRED in "${REQUIRED_CONFIGS[@]}"; do
 
         echo
         echo "Current target configuration:"
+
         grep \
             -E \
             '^CONFIG_TARGET_(BOARD|SUBTARGET|mediatek|DEVICE_mediatek)' \
@@ -553,12 +672,46 @@ echo "✅ Device framework verified."
 
 
 # ============================================================
-# 17. Selected packages
+# 19. Verify target information
 # ============================================================
 
 echo
 echo "============================================================"
-echo " 13. Selected packages"
+echo " 18. Target information"
+echo "============================================================"
+
+
+echo
+echo "TARGET_BOARD:"
+grep \
+    '^CONFIG_TARGET_BOARD=' \
+    .config \
+    || true
+
+
+echo
+echo "TARGET_SUBTARGET:"
+grep \
+    '^CONFIG_TARGET_SUBTARGET=' \
+    .config \
+    || true
+
+
+echo
+echo "TARGET_DEVICE:"
+grep \
+    '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$' \
+    .config \
+    || true
+
+
+# ============================================================
+# 20. Selected packages
+# ============================================================
+
+echo
+echo "============================================================"
+echo " 19. Selected packages"
 echo "============================================================"
 
 
@@ -570,12 +723,29 @@ grep \
 
 
 # ============================================================
-# 18. Final selected device
+# 21. Verify important modem packages
 # ============================================================
 
 echo
 echo "============================================================"
-echo " FINAL SELECTED DEVICE"
+echo " 20. Verify QModem packages"
+echo "============================================================"
+
+
+grep \
+    -E \
+    '^CONFIG_PACKAGE_(luci-app-qmodem-next|usb-modeswitch|usbutils|comgt|chat|libqmi|qmi-utils|libmbim|mbim-utils|modemmanager)=' \
+    .config \
+    || true
+
+
+# ============================================================
+# 22. Final selected DEVICE
+# ============================================================
+
+echo
+echo "============================================================"
+echo " 21. FINAL SELECTED DEVICE"
 echo "============================================================"
 
 
@@ -585,12 +755,12 @@ grep \
 
 
 # ============================================================
-# 19. Final exact verification
+# 23. Final exact verification
 # ============================================================
 
 echo
 echo "============================================================"
-echo " 14. Final exact verification"
+echo " 22. FINAL EXACT VERIFICATION"
 echo "============================================================"
 
 
@@ -607,8 +777,10 @@ if [ "${FINAL_DEVICE_COUNT}" -ne 1 ]; then
     echo
     echo "❌ FATAL ERROR"
     echo
-    echo "Expected exactly one Filogic device."
-    echo "Found: ${FINAL_DEVICE_COUNT}"
+    echo "Expected exactly ONE Filogic device."
+    echo
+    echo "Found:"
+    echo "${FINAL_DEVICE_COUNT}"
 
     exit 1
 fi
@@ -636,11 +808,15 @@ if grep \
     echo
     echo "❌ FATAL ERROR"
     echo
-    echo "openwrt_one detected."
+    echo "OpenWrt One detected."
 
     exit 1
 fi
 
+
+# ============================================================
+# 24. Final result
+# ============================================================
 
 echo
 echo "============================================================"
@@ -664,51 +840,16 @@ echo "eMMC DTS:"
 echo "mt7981b-huasifei-wh3000-pro-emmc.dts"
 
 echo
+echo "Common DTS:"
+echo "mt7981b-huasifei-wh3000-pro.dtsi"
+
+echo
 echo "OpenWrt One:"
 echo "NOT selected"
 
 echo
-echo "Important:"
-echo "No make defconfig will be executed after this point."
-
-echo
-echo "============================================================"
-
-# ============================================================
-# 17. 显示重要软件包
-# ============================================================
-
-echo
-echo "============================================================"
-echo " 13. Selected packages"
-echo "============================================================"
-
-
-grep \
-    -E \
-    '^CONFIG_PACKAGE_(luci-app-qmodem-next|luci-app-lucky|lucky|dockerd|containerd|runc|docker)=' \
-    .config \
-    || true
-
-
-# ============================================================
-# 18. 最终设备
-# ============================================================
-
-echo
-echo "============================================================"
-echo " FINAL SELECTED DEVICE"
-echo "============================================================"
-
-
-grep \
-    '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$' \
-    .config
-
-
-# ============================================================
-# 19. 重要提醒
-# ============================================================
+echo "Device count:"
+echo "${FINAL_DEVICE_COUNT}"
 
 echo
 echo "============================================================"
@@ -716,41 +857,24 @@ echo " IMPORTANT"
 echo "============================================================"
 
 echo
-echo "The WH3000 Pro target has now been forced AFTER defconfig."
+echo "WH3000 Pro eMMC target has been LOCKED."
 
 echo
-echo "DO NOT run:"
-echo "  make defconfig"
-echo "  make olddefconfig"
-echo "  make menuconfig"
+echo "From this point onward:"
+echo
+echo "  ❌ DO NOT run: make defconfig"
+echo "  ❌ DO NOT run: make olddefconfig"
+echo "  ❌ DO NOT run: make menuconfig"
 
 echo
-echo "after this point."
-
-
-# ============================================================
-# 20. 最终成功
-# ============================================================
-
+echo "Continue directly with:"
 echo
-echo "============================================================"
-echo " ✅ PREPARE PASSED"
-echo "============================================================"
-
-echo
-echo "Exact device:"
-echo "${TARGET_DEVICE}"
-
-echo
-echo "Exact Kconfig:"
-echo "${TARGET_CONFIG}"
-
-echo
-echo "eMMC DTS:"
-echo "mt7981b-huasifei-wh3000-pro-emmc.dts"
-
-echo
-echo "WH3000 Pro target is LOCKED."
+echo "  make download"
+echo "  make -j2"
 
 echo
 echo "============================================================"
+echo " FanchmWrt WH3000 Pro PREPARE FINISHED"
+echo "============================================================"
+
+echo
