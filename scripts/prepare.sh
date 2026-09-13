@@ -14,7 +14,7 @@ TARGET_DEVICE="huasifei_wh3000-pro-emmc"
 TARGET_SYMBOL="huasifei_wh3000_pro_emmc"
 TARGET_CONFIG="CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${TARGET_SYMBOL}=y"
 
-CONFIG_FILE="${GITHUB_WORKSPACE}/config/wh3000pro.config""
+CONFIG_FILE="${GITHUB_WORKSPACE}/config/wh3000pro.config"
 
 echo
 echo "TARGET_DEVICE = ${TARGET_DEVICE}"
