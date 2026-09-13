@@ -53,9 +53,9 @@ TARGET_CONFIG="CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${TARGET_SYMBOL}=y"
 
 DEVICE_MK="target/linux/mediatek/image/filogic.mk"
 
-DTS_EMMC="target/linux/mediatek/dts/mt7981b-huasifei_wh3000-pro-emmc.dts"
+DTS_EMMC="target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro-emmc.dts"
 
-DTS_COMMON="target/linux/mediatek/dts/mt7981b-huasifei_wh3000-pro.dtsi"
+DTS_COMMON="target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro.dtsi"
 
 
 # ============================================================
