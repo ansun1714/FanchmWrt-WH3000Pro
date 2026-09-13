@@ -27,7 +27,7 @@ permissions:
 env:
   FANCHMWRT_TAG: fanchmwrt-25.12.4
   BUILD_DIR: openwrt
-  DEVICE: huasifei-wh3000-pro-emmc
+  DEVICE: huasifei_wh3000-pro-emmc
   TARGET: mediatek/filogic
 
 jobs:
