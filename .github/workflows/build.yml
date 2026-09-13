@@ -384,8 +384,8 @@ jobs:
           echo
           echo "DTS:"
           ls -lh \
-            target/linux/mediatek/dts/mt7981b-huasifei_wh3000-pro-emmc.dts \
-            target/linux/mediatek/dts/mt7981b-huasifei_wh3000-pro.dtsi
+            target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro-emmc.dts \
+            target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro.dtsi
 
           echo
           echo "============================================================"
