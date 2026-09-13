@@ -17,7 +17,7 @@ on:
 
   push:
     paths:
-      - ".github/workflows/Wh3000pro.yml"
+      - ".github/workflows/build.yml"
       - "config/wh3000pro.config"
       - "scripts/**"
 
@@ -29,11 +29,15 @@ env:
   BUILD_DIR: openwrt
 
   # ============================================================
-  # ★★★ 唯一正确的 WH3000 Pro eMMC Device ID
+  # ★★★ WH3000 Pro eMMC Device ID
   # ============================================================
   DEVICE: huasifei_wh3000-pro-emmc
 
-  TARGET: mediatek/filogic
+  # ============================================================
+  # ★★★ 注意：
+  # 不能使用 TARGET，否则会污染 Docker CLI 构建环境
+  # ============================================================
+  OPENWRT_TARGET: mediatek/filogic
 
 jobs:
 
@@ -86,12 +90,23 @@ jobs:
           echo "${DEVICE}"
 
           echo
-          echo "Target:"
-          echo "${TARGET}"
+          echo "OpenWrt Target:"
+          echo "${OPENWRT_TARGET}"
 
           echo
           echo "FanchmWrt:"
           echo "${FANCHMWRT_TAG}"
+
+          echo
+          echo "Checking dangerous TARGET variable:"
+
+          if [ -n "${TARGET:-}" ]; then
+            echo "❌ ERROR: TARGET=${TARGET}"
+            echo "TARGET 会污染第三方 package 构建环境"
+            exit 1
+          fi
+
+          echo "✅ TARGET 未设置"
 
       # ============================================================
       # 3. 安装编译依赖
@@ -143,7 +158,7 @@ jobs:
           ccache -s
 
       # ============================================================
-      # 5. 缓存下载目录
+      # 5. 缓存源码下载
       # ============================================================
       - name: 5️⃣ 缓存源码下载
         uses: actions/cache@v4
@@ -553,7 +568,7 @@ jobs:
           echo "============================================================"
 
           make download -j4 V=s
-
+          
       # ============================================================
       # 17. 编译
       # ============================================================
@@ -579,6 +594,26 @@ jobs:
           date
 
           echo
+          echo "OpenWrt Target:"
+          echo "${OPENWRT_TARGET}"
+
+          echo
+          echo "Device:"
+          echo "${DEVICE}"
+
+          echo
+          echo "清除可能污染第三方 package 的 TARGET 环境变量"
+
+          unset TARGET
+
+          if [ -n "${TARGET:-}" ]; then
+            echo "❌ ERROR: TARGET 仍然存在"
+            exit 1
+          fi
+
+          echo "✅ TARGET 已清除"
+
+          echo
           echo "编译命令:"
           echo "make -j2 V=s"
 
@@ -594,7 +629,7 @@ jobs:
           echo "============================================================"
 
       # ============================================================
-      # 18. 查找固件
+      # 18. 查找编译结果
       # ============================================================
       - name: 1️⃣8️⃣ 查找编译结果
         working-directory: openwrt
@@ -681,7 +716,7 @@ jobs:
           ls -lh "${GITHUB_WORKSPACE}/release"
 
       # ============================================================
-       # 20. Actions Artifact
+      # 20. Actions Artifact
       # ============================================================
       - name: 2️⃣0️⃣ 上传 Actions Artifact
         uses: actions/upload-artifact@v4
@@ -712,7 +747,7 @@ jobs:
 
           Source: ${FANCHMWRT_TAG}
           Device: ${DEVICE}
-          Target: ${TARGET}
+          Target: ${OPENWRT_TARGET}
           Kernel: 6.12
           Build: GitHub Actions
 
