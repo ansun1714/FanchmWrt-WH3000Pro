@@ -350,22 +350,33 @@ jobs:
           echo "✅ DTS EXISTS AFTER DIY1"
           echo "============================================================"
 
-      # ============================================================
-      # 12. Prepare
-      # ============================================================
-      - name: 1️⃣2️⃣ Prepare WH3000 Pro 配置
-        run: |
+            # ============================================================
+            # 12. Prepare
+            # ============================================================
+          - name: 1️⃣2️⃣ Prepare WH3000 Pro 配置
+          working-directory: openwrt
+          run: |
           set -euo pipefail
 
-          chmod +x scripts/prepare.sh
+          chmod +x ../scripts/prepare.sh
 
           echo "============================================================"
           echo " 执行 PREPARE"
           echo "============================================================"
 
+          echo
+          echo "当前工作目录："
+          pwd
+
+          echo
+          echo "检查 OpenWrt 源码："
+          test -d target/linux/mediatek
+
+          echo "✅ target/linux/mediatek 存在"
+
           DEVICE="${DEVICE}" \
           GITHUB_WORKSPACE="${GITHUB_WORKSPACE}" \
-          ./scripts/prepare.sh
+          ../scripts/prepare.sh
 
       # ============================================================
       # 13. Prepare 后 DTS 检查
