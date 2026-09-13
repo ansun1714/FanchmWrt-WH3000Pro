@@ -276,9 +276,176 @@ echo
 
 
 # ============================================================
-# 11. 运行 make defconfig
+# 11. Kconfig Device 符号诊断
 # ============================================================
 
+echo
+echo "============================================================"
+echo " 11. Kconfig Device 符号诊断"
+echo "============================================================"
+
+echo
+echo "目标符号："
+echo "${TARGET_CONFIG}"
+
+echo
+echo "------------------------------------------------------------"
+echo "检查 Kconfig 源码中是否存在 WH3000 Pro 符号"
+echo "------------------------------------------------------------"
+
+grep -R \
+    -n \
+    --exclude-dir=.git \
+    --exclude='*.o' \
+    --exclude='*.d' \
+    'huasifei_wh3000_pro_emmc' \
+    target/linux/mediatek \
+    target/linux \
+    2>/dev/null \
+    | head -100 \
+    || true
+
+echo
+echo "------------------------------------------------------------"
+echo "检查 huasifei_wh3000-pro-emmc Device 定义"
+echo "------------------------------------------------------------"
+
+grep -R \
+    -n \
+    --exclude-dir=.git \
+    'huasifei_wh3000-pro-emmc' \
+    target/linux/mediatek \
+    2>/dev/null \
+    | head -100 \
+    || true
+
+echo
+echo "------------------------------------------------------------"
+echo "检查 Device Kconfig 相关文件"
+echo "------------------------------------------------------------"
+
+find target/linux/mediatek \
+    -type f \
+    \( -name 'Config.in' -o -name 'Kconfig' -o -name 'target.mk' \) \
+    -print \
+    | sort
+
+echo
+echo "------------------------------------------------------------"
+echo "检查当前 .config 中 Device"
+echo "------------------------------------------------------------"
+
+grep -E \
+    '^CONFIG_TARGET_DEVICE_mediatek_filogic' \
+    .config \
+    || true
+
+echo
+echo "============================================================"
+echo " 11.1 执行 make defconfig"
+echo "============================================================"
+
+make defconfig
+
+echo
+echo "============================================================"
+echo " 11.2 defconfig 后立即检查"
+echo "============================================================"
+
+echo
+echo "Device："
+
+grep -E \
+    '^CONFIG_TARGET_DEVICE_mediatek_filogic' \
+    .config \
+    || true
+
+echo
+echo "Multi Profile："
+
+grep -E \
+    '^CONFIG_TARGET_MULTI_PROFILE=' \
+    .config \
+    || true
+
+echo
+echo "Per Device RootFS："
+
+grep -E \
+    '^CONFIG_TARGET_PER_DEVICE_ROOTFS=' \
+    .config \
+    || true
+
+echo
+echo "Target："
+
+grep -E \
+    '^(CONFIG_TARGET_mediatek=|CONFIG_TARGET_mediatek_filogic=|CONFIG_TARGET_BOARD=|CONFIG_TARGET_SUBTARGET=)' \
+    .config \
+    || true
+
+echo
+echo "============================================================"
+echo " 11.3 检查 Kconfig 是否认识目标符号"
+echo "============================================================"
+
+if grep -R \
+    -q \
+    --exclude-dir=.git \
+    'huasifei_wh3000_pro_emmc' \
+    target/linux/mediatek \
+    target/linux \
+    2>/dev/null; then
+
+    echo "✅ Kconfig/源码中发现 huasifei_wh3000_pro_emmc"
+
+else
+
+    echo "❌ Kconfig/源码中没有发现 huasifei_wh3000_pro_emmc"
+fi
+
+
+if grep -qxF "${TARGET_CONFIG}" .config; then
+
+    echo
+    echo "✅ defconfig 后 Device 仍然存在"
+    echo "   ${TARGET_CONFIG}"
+
+else
+
+    echo
+    echo "❌ defconfig 后 Device 被删除"
+    echo
+    echo "这不是 DTS 问题。"
+    echo "这是 Kconfig Device 注册/选择机制问题。"
+    echo
+    echo "============================================================"
+    echo " DIAGNOSTIC RESULT"
+    echo "============================================================"
+
+    echo
+    echo "当前所有 Device："
+
+    grep -E \
+        '^CONFIG_TARGET_DEVICE_' \
+        .config \
+        || true
+
+    echo
+    echo "当前 Target："
+
+    grep -E \
+        '^CONFIG_TARGET_' \
+        .config \
+        || true
+
+    echo
+    echo "============================================================"
+    echo " DIAGNOSTIC END"
+    echo "============================================================"
+
+    exit 1
+fi
 echo "============================================================"
 echo " 11. 执行 make defconfig"
 echo "============================================================"
