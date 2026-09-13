@@ -6,11 +6,24 @@ set -euo pipefail
 # FanchmWrt WH3000 Pro eMMC
 # prepare.sh
 #
-# FINAL VERSION
+# FINAL STABLE VERSION
 #
-# 核心目标：
+# Target:
 #   huasifei_wh3000-pro-emmc
 #
+# ------------------------------------------------------------
+# 正确的三种名称必须严格区分
+#
+# 1. Device ID
+#    huasifei_wh3000-pro-emmc
+#
+# 2. DTS 文件
+#    mt7981b-huasifei-wh3000-pro-emmc.dts
+#
+# 3. Kconfig
+#    CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_huasifei_wh3000_pro_emmc=y
+#
+# ------------------------------------------------------------
 # 核心原则：
 #
 #   1. 检查 WH3000 Pro Device 定义
@@ -25,6 +38,7 @@ set -euo pipefail
 #  10. 强制写入后不再执行任何 defconfig
 #  11. 严格验证最终目标
 #
+# ------------------------------------------------------------
 # 非常重要：
 #
 # 本脚本结束以后：
@@ -45,13 +59,42 @@ OPENWRT_DIR="${GITHUB_WORKSPACE}/openwrt"
 
 CONFIG_FILE="${GITHUB_WORKSPACE}/config/wh3000pro.config"
 
+# ------------------------------------------------------------
+# 正确的 FanchmWrt Device ID
+#
+# 注意：
+# huasifei 后面是 _
+# wh3000-pro 中间是 -
+# ------------------------------------------------------------
+
 TARGET_DEVICE="${DEVICE:-huasifei_wh3000-pro-emmc}"
+
+# ------------------------------------------------------------
+# Kconfig Symbol
+#
+# Kconfig 中：
+# - 会转换成 _
+#
+# huasifei_wh3000-pro-emmc
+#        ↓
+# huasifei_wh3000_pro_emmc
+# ------------------------------------------------------------
 
 TARGET_SYMBOL="${TARGET_DEVICE//-/_}"
 
 TARGET_CONFIG="CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${TARGET_SYMBOL}=y"
 
+
+# ============================================================
+# Source files
+# ============================================================
+
 DEVICE_MK="target/linux/mediatek/image/filogic.mk"
+
+# ------------------------------------------------------------
+# DTS 文件名必须使用 -
+# 不能写成 huasifei_wh3000
+# ------------------------------------------------------------
 
 DTS_EMMC="target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro-emmc.dts"
 
@@ -92,6 +135,94 @@ echo "${TARGET_CONFIG}"
 
 
 # ============================================================
+# 0.2 Naming safety verification
+# ============================================================
+
+echo
+echo "============================================================"
+echo " 0. Naming verification"
+echo "============================================================"
+
+EXPECTED_DEVICE="huasifei_wh3000-pro-emmc"
+
+EXPECTED_DTS="target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro-emmc.dts"
+
+EXPECTED_COMMON_DTS="target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro.dtsi"
+
+EXPECTED_CONFIG="CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_huasifei_wh3000_pro_emmc=y"
+
+
+if [ "${TARGET_DEVICE}" != "${EXPECTED_DEVICE}" ]; then
+
+    echo
+    echo "❌ FATAL ERROR"
+    echo
+    echo "Incorrect TARGET_DEVICE:"
+    echo "${TARGET_DEVICE}"
+
+    echo
+    echo "Expected:"
+    echo "${EXPECTED_DEVICE}"
+
+    exit 1
+fi
+
+
+if [ "${DTS_EMMC}" != "${EXPECTED_DTS}" ]; then
+
+    echo
+    echo "❌ FATAL ERROR"
+    echo
+    echo "Incorrect DTS_EMMC path:"
+    echo "${DTS_EMMC}"
+
+    echo
+    echo "Expected:"
+    echo "${EXPECTED_DTS}"
+
+    exit 1
+fi
+
+
+if [ "${DTS_COMMON}" != "${EXPECTED_COMMON_DTS}" ]; then
+
+    echo
+    echo "❌ FATAL ERROR"
+    echo
+    echo "Incorrect DTS_COMMON path:"
+    echo "${DTS_COMMON}"
+
+    echo
+    echo "Expected:"
+    echo "${EXPECTED_COMMON_DTS}"
+
+    exit 1
+fi
+
+
+if [ "${TARGET_CONFIG}" != "${EXPECTED_CONFIG}" ]; then
+
+    echo
+    echo "❌ FATAL ERROR"
+    echo
+    echo "Incorrect TARGET_CONFIG:"
+    echo "${TARGET_CONFIG}"
+
+    echo
+    echo "Expected:"
+    echo "${EXPECTED_CONFIG}"
+
+    exit 1
+fi
+
+
+echo
+echo "✅ TARGET_DEVICE naming correct."
+echo "✅ DTS naming correct."
+echo "✅ Kconfig naming correct."
+
+
+# ============================================================
 # 1. Verify Device Makefile
 # ============================================================
 
@@ -119,7 +250,7 @@ echo "${DEVICE_MK}"
 
 
 if ! grep -q \
-    "define Device/${TARGET_DEVICE}" \
+    "^define Device/${TARGET_DEVICE}$" \
     "${DEVICE_MK}"; then
 
     echo
@@ -133,7 +264,7 @@ if ! grep -q \
 
     grep \
         -n \
-        "define Device/huasifei" \
+        "^define Device/huasifei" \
         "${DEVICE_MK}" \
         || true
 
@@ -172,7 +303,7 @@ echo "============================================================"
 
 if grep \
     -Eq \
-    "TARGET_DEVICES[[:space:]]*\+=.*${TARGET_DEVICE}" \
+    "^TARGET_DEVICES[[:space:]]*\\+=[[:space:]]*.*${TARGET_DEVICE}([[:space:]]|$)" \
     "${DEVICE_MK}"; then
 
     echo
@@ -218,6 +349,17 @@ if [ ! -f "${DTS_EMMC}" ]; then
     echo "Missing eMMC DTS:"
     echo "${DTS_EMMC}"
 
+    echo
+    echo "Searching WH3000 DTS files:"
+    find \
+        target/linux/mediatek/dts \
+        -maxdepth 1 \
+        -type f \
+        -iname "*wh3000*" \
+        -print \
+        | sort \
+        || true
+
     exit 1
 fi
 
@@ -244,6 +386,17 @@ if [ ! -f "${DTS_COMMON}" ]; then
     echo
     echo "Missing common DTS:"
     echo "${DTS_COMMON}"
+
+    echo
+    echo "Searching WH3000 DTS files:"
+    find \
+        target/linux/mediatek/dts \
+        -maxdepth 1 \
+        -type f \
+        -iname "*wh3000*" \
+        -print \
+        | sort \
+        || true
 
     exit 1
 fi
@@ -348,14 +501,19 @@ echo "✅ Base config copied."
 # ============================================================
 # 10. Normalize old DEVICE selections
 #
-# 这里只清理具体 DEVICE。
+# 这里只清理具体 Filogic DEVICE。
 #
 # 不删除：
 #
 # CONFIG_TARGET_mediatek
 # CONFIG_TARGET_mediatek_filogic
-# CONFIG_TARGET_DEVICE_mediatek_filogic
 #
+# 注意：
+#
+# CONFIG_TARGET_DEVICE_mediatek_filogic=y
+#
+# 不是本版本需要检查的目标配置。
+# 不再要求它存在。
 # ============================================================
 
 echo
@@ -366,6 +524,12 @@ echo "============================================================"
 
 sed -i \
     '/^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$/d' \
+    .config
+
+
+# 防止配置文件本身带入 OpenWrt One
+sed -i \
+    '/^CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one=y$/d' \
     .config
 
 
@@ -382,15 +546,15 @@ grep \
 # ============================================================
 # 11. make defconfig
 #
-# 这是本脚本唯一一次 defconfig。
+# 这是整个脚本唯一一次 defconfig。
 #
-# defconfig 的作用：
+# 作用：
 #   让基础配置完成 Kconfig 依赖解析。
 #
 # 注意：
-#   defconfig 可能自动选择一个默认 DEVICE。
+#   defconfig 可能自动选择默认 DEVICE。
 #
-# 后面我们会清理它。
+# 后面会彻底清理。
 # ============================================================
 
 echo
@@ -454,6 +618,12 @@ sed -i \
     .config
 
 
+# 再次明确清除 OpenWrt One
+sed -i \
+    '/^CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one=y$/d' \
+    .config
+
+
 echo
 echo "After cleanup:"
 
@@ -471,8 +641,9 @@ grep \
 #
 # 从这里开始：
 #
-# 不再运行 make defconfig
-# 不再运行 make olddefconfig
+#   ❌ 不再运行 make defconfig
+#   ❌ 不再运行 make olddefconfig
+#   ❌ 不再运行 make menuconfig
 #
 # ============================================================
 
@@ -556,7 +727,7 @@ echo "============================================================"
 
 
 if ! grep \
-    -qF \
+    -qxF \
     "${TARGET_CONFIG}" \
     .config; then
 
@@ -593,13 +764,21 @@ echo "============================================================"
 
 if grep \
     -q \
-    '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_openwrt_one=y$' \
+    '^CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one=y$' \
     .config; then
 
     echo
     echo "❌ FATAL ERROR"
     echo
     echo "OpenWrt One is selected!"
+
+    echo
+    echo "Current OpenWrt One configuration:"
+
+    grep \
+        '^CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one=' \
+        .config \
+        || true
 
     exit 1
 fi
@@ -612,16 +791,23 @@ echo "✅ OpenWrt One not selected."
 # ============================================================
 # 18. Verify target platform
 #
-# 注意：
-#
-# 不要求 CONFIG_TARGET_arm=y
-#
-# 真正关键的是：
+# FanchmWrt 25.12.4 正确的目标配置：
 #
 #   CONFIG_TARGET_mediatek=y
 #   CONFIG_TARGET_mediatek_filogic=y
+#   CONFIG_TARGET_mediatek_filogic_DEVICE_huasifei_wh3000_pro_emmc=y
+#
+# 不要求：
+#
+#   CONFIG_TARGET_arm=y
 #   CONFIG_TARGET_DEVICE_mediatek_filogic=y
 #
+# 特别注意：
+#
+# CONFIG_TARGET_DEVICE_mediatek_filogic=y
+#
+# 不属于这里必须存在的 target 配置，
+# 因此不能再检查它。
 # ============================================================
 
 echo
@@ -633,14 +819,14 @@ echo "============================================================"
 REQUIRED_CONFIGS=(
     "CONFIG_TARGET_mediatek=y"
     "CONFIG_TARGET_mediatek_filogic=y"
-    "CONFIG_TARGET_DEVICE_mediatek_filogic=y"
+    "${TARGET_CONFIG}"
 )
 
 
 for REQUIRED in "${REQUIRED_CONFIGS[@]}"; do
 
     if ! grep \
-        -qF \
+        -qxF \
         "${REQUIRED}" \
         .config; then
 
@@ -668,7 +854,7 @@ done
 echo
 echo "✅ MediaTek target verified."
 echo "✅ Filogic subtarget verified."
-echo "✅ Device framework verified."
+echo "✅ WH3000 Pro eMMC device verified."
 
 
 # ============================================================
@@ -756,6 +942,8 @@ grep \
 
 # ============================================================
 # 23. Final exact verification
+# ==========================================
+# 23. Final exact verification
 # ============================================================
 
 echo
@@ -782,12 +970,20 @@ if [ "${FINAL_DEVICE_COUNT}" -ne 1 ]; then
     echo "Found:"
     echo "${FINAL_DEVICE_COUNT}"
 
+    echo
+    echo "Current selections:"
+
+    grep \
+        '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$' \
+        .config \
+        || true
+
     exit 1
 fi
 
 
 if ! grep \
-    -qF \
+    -qxF \
     "${TARGET_CONFIG}" \
     .config; then
 
@@ -802,13 +998,41 @@ fi
 
 if grep \
     -q \
-    '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_openwrt_one=y$' \
+    '^CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one=y$' \
     .config; then
 
     echo
     echo "❌ FATAL ERROR"
     echo
     echo "OpenWrt One detected."
+
+    exit 1
+fi
+
+
+if ! grep \
+    -qxF \
+    "CONFIG_TARGET_mediatek=y" \
+    .config; then
+
+    echo
+    echo "❌ FATAL ERROR"
+    echo
+    echo "CONFIG_TARGET_mediatek=y is missing."
+
+    exit 1
+fi
+
+
+if ! grep \
+    -qxF \
+    "CONFIG_TARGET_mediatek_filogic=y" \
+    .config; then
+
+    echo
+    echo "❌ FATAL ERROR"
+    echo
+    echo "CONFIG_TARGET_mediatek_filogic=y is missing."
 
     exit 1
 fi
