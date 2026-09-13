@@ -1,176 +1,762 @@
 name: 🏭 FanchmWrt WH3000 Pro 自动编译
 
 on:
+
   workflow_dispatch:
+
     inputs:
+
       clean_build:
         description: '清理编译目录后重新编译'
         required: true
         default: false
         type: boolean
+
       upload_release:
         description: '编译成功后自动创建 GitHub Release'
         required: true
         default: true
         type: boolean
+
   push:
+
     paths:
       - '.github/workflows/build.yml'
       - 'config/**'
       - 'scripts/**'
       - 'custom-packages/**'
 
+
 permissions:
   contents: write
 
+
 env:
+
   FANCHMWRT_TAG: fanchmwrt-25.12.4
+
   BUILD_DIR: openwrt
+
+  # ==========================================================
+  # 固定真实硬件
+  # ==========================================================
+
   DEVICE: huasifei_wh3000-pro-emmc
 
+
 jobs:
+
   build:
+
     runs-on: ubuntu-22.04
+
     timeout-minutes: 240
 
+
     steps:
-      - name: Checkout build scripts
+
+      # ======================================================
+      # 1. Checkout
+      # ======================================================
+
+      - name: Checkout build project
+
         uses: actions/checkout@v4
 
+
+      # ======================================================
+      # 2. Free disk space
+      # ======================================================
+
       - name: Free disk space
+
         run: |
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
+
+          sudo rm -rf /usr/local/lib/android || true
+
+          sudo rm -rf /usr/share/dotnet || true
+
+          sudo rm -rf /opt/ghc || true
+
           sudo docker image prune --all --force || true
+
           df -h
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential clang flex bison g++ gawk gcc-multilib \
-            gettext git libncurses5-dev libssl-dev python3 python3-distutils \
-            rsync unzip zlib1g-dev file wget curl xsltproc \
-            swig time jq ccache libelf-dev device-tree-compiler \
-            genisoimage ecj fastjar java-propose-classpath \
-            libpython3-dev python3-setuptools
 
-      - name: Restore downloads cache
+      # ======================================================
+      # 3. Build dependencies
+      # ======================================================
+
+      - name: Install build dependencies
+
+        run: |
+
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            flex \
+            bison \
+            g++ \
+            gawk \
+            gcc-multilib \
+            gettext \
+            git \
+            libncurses5-dev \
+            libssl-dev \
+            python3 \
+            python3-distutils \
+            rsync \
+            unzip \
+            zlib1g-dev \
+            file \
+            wget \
+            curl \
+            xsltproc \
+            swig \
+            time \
+            jq \
+            ccache \
+            libelf-dev \
+            device-tree-compiler \
+            genisoimage \
+            ecj \
+            fastjar \
+            java-propose-classpath \
+            libpython3-dev \
+            python3-setuptools
+
+
+      # ======================================================
+      # 4. Download cache
+      # ======================================================
+
+      - name: Restore download cache
+
         uses: actions/cache@v4
+
         with:
+
           path: |
             openwrt/dl
-          key: fanchmwrt-dl-${{ env.FANCHMWRT_TAG }}-${{ runner.os }}
+
+          key: |
+            fanchmwrt-dl-${{ env.FANCHMWRT_TAG }}-${{ runner.os }}
+
           restore-keys: |
             fanchmwrt-dl-${{ env.FANCHMWRT_TAG }}-
             fanchmwrt-dl-
 
+
+      # ======================================================
+      # 5. ccache
+      # ======================================================
+
       - name: Restore ccache
+
         uses: actions/cache@v4
+
         with:
-          path: ~/.ccache
-          key: fanchmwrt-ccache-${{ env.FANCHMWRT_TAG }}-${{ github.ref_name }}
+
+          path: |
+            ~/.ccache
+
+          key: |
+            fanchmwrt-ccache-${{ env.FANCHMWRT_TAG }}-${{ github.ref_name }}
+
           restore-keys: |
             fanchmwrt-ccache-${{ env.FANCHMWRT_TAG }}-
             fanchmwrt-ccache-
 
+
+      # ======================================================
+      # 6. Clone FanchmWrt
+      # ======================================================
+
       - name: Clone FanchmWrt
+
         run: |
-          git clone --depth=1 --branch "${FANCHMWRT_TAG}" \
-            https://github.com/fanchmwrt/fanchmwrt.git "${BUILD_DIR}"
+
+          git clone \
+            --depth=1 \
+            --branch "${FANCHMWRT_TAG}" \
+            https://github.com/fanchmwrt/fanchmwrt.git \
+            "${BUILD_DIR}"
+
           cd "${BUILD_DIR}"
+
+          echo "================================================"
+          echo " FanchmWrt source"
+          echo "================================================"
+
           git log -1 --oneline
+
           git describe --tags --always
 
-      - name: Prepare source and feeds
+
+      # ======================================================
+      # 7. DIY + hardware detection/import
+      # ======================================================
+
+      - name: Prepare feeds and exact hardware target
+
         run: |
-          chmod +x scripts/prepare.sh scripts/diy-part1.sh scripts/diy-part2.sh
-          ./scripts/prepare.sh
+
+          set -euo pipefail
+
+          chmod +x \
+            scripts/diy-part1.sh
+
+          chmod +x \
+            scripts/prepare.sh
+
+          chmod +x \
+            scripts/diy-part2.sh
+
+
+          # ==================================================
+          # 正确顺序非常重要
+          #
+          # DIY1
+          #   ↓
+          # feeds
+          #   ↓
+          # WH3000 Pro 原生检测
+          #   ↓
+          # 缺失则从 OpenWrt 395bb64a 移植
+          #   ↓
+          # prepare
+          #   ↓
+          # make defconfig
+          #   ↓
+          # DIY2
+          # ==================================================
+
           ./scripts/diy-part1.sh
+
+          ./scripts/prepare.sh
+
           ./scripts/diy-part2.sh
 
-      - name: Show important source files
-        working-directory: openwrt
-        run: |
-          echo "=== WH3000 Pro image definition ==="
-          grep -n -A16 -B2 'Device/huasifei_wh3000-pro-emmc' \
-            target/linux/mediatek/image/filogic.mk
-          echo
-          echo "=== WH3000 Pro modem GPIO ==="
-          grep -n -A8 -B2 'modem-power' \
-            target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro.dtsi
-          echo
-          echo "=== Kernel ==="
-          grep -n '^KERNEL_PATCHVER' target/linux/mediatek/Makefile
 
-      - name: Clean build tree if requested
-        if: ${{ inputs.clean_build == true }}
+      # ======================================================
+      # 8. Final source verification
+      # ======================================================
+
+      - name: Final source verification
+
         working-directory: openwrt
+
         run: |
+
+          set -euo pipefail
+
+          DEVICE="${DEVICE:-huasifei_wh3000-pro-emmc}"
+
+
+          echo "================================================"
+          echo " Exact image definition"
+          echo "================================================"
+
+          grep -n \
+            -A15 \
+            -B2 \
+            "^define Device/${DEVICE}$" \
+            target/linux/mediatek/image/filogic.mk
+
+
+          echo
+          echo "================================================"
+          echo " Exact target registration"
+          echo "================================================"
+
+          grep -n \
+            "^TARGET_DEVICES += ${DEVICE}$" \
+            target/linux/mediatek/image/filogic.mk
+
+
+          echo
+          echo "================================================"
+          echo " eMMC DTS"
+          echo "================================================"
+
+          test -f \
+            target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro-emmc.dts
+
+
+          echo
+          echo "================================================"
+          echo " Common DTS / modem-power"
+          echo "================================================"
+
+          grep -n \
+            -A8 \
+            -B2 \
+            'modem-power' \
+            target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro.dtsi
+
+
+          echo
+          echo "================================================"
+          echo " Kernel version"
+          echo "================================================"
+
+          grep \
+            -n \
+            '^KERNEL_PATCHVER' \
+            target/linux/mediatek/Makefile
+
+
+      # ======================================================
+      # 9. Optional clean build
+      # ======================================================
+
+      - name: Optional clean build
+
+        if: ${{ inputs.clean_build == true }}
+
+        working-directory: openwrt
+
+        run: |
+
           make clean || true
-          rm -rf build_dir/target-* staging_dir/target-* tmp
+
+          rm -rf \
+            build_dir/target-* \
+            staging_dir/target-* \
+            tmp
+
+
+      # ======================================================
+      # 10. Final defconfig safety check
+      # ======================================================
+
+      - name: Final defconfig safety check
+
+        working-directory: openwrt
+
+        run: |
+
+          set -euo pipefail
+
+          DEVICE="${DEVICE:-huasifei_wh3000-pro-emmc}"
+
+          SYMBOL="CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${DEVICE//-/_}=y"
+
+
+          echo "==> Re-run make defconfig"
+
+          make defconfig
+
+
+          echo
+          echo "==> Verify exact target"
+
+          grep -qF \
+            "${SYMBOL}" \
+            .config
+
+
+          COUNT="$(
+            grep -Ec \
+              '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$' \
+              .config || true
+          )"
+
+
+          test "${COUNT}" -eq 1
+
+
+          # ==================================================
+          # 禁止 openwrt_one
+          # ==================================================
+
+          ! grep -q \
+            '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_openwrt_one=y$' \
+            .config
+
+
+          echo
+          echo "================================================"
+          echo " FINAL SELECTED DEVICE"
+          echo "================================================"
+
+          grep \
+            '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$' \
+            .config
+
+
+      # ======================================================
+      # 11. Download
+      # ======================================================
 
       - name: Download sources
+
         working-directory: openwrt
+
         run: |
-          make defconfig
-          make download -j8 V=s
-          find dl -type f -size -1024c -delete || true
+
+          make download \
+            -j8 \
+            V=s
+
+          find dl \
+            -type f \
+            -size -1024c \
+            -delete || true
+
+
+      # ======================================================
+      # 12. Compile
+      # ======================================================
 
       - name: Compile firmware
-        working-directory: openwrt
-        run: |
-          make -j2 V=s
 
-      - name: Validate output
         working-directory: openwrt
+
         run: |
-          echo "=== Firmware files ==="
-          find bin/targets -type f \
-            \( -name '*sysupgrade*' -o -name '*factory*' -o -name '*.itb' -o -name '*.bin' \) \
-            -print | sort
-          echo "=== SHA256 ==="
-          find bin/targets -type f -print0 | xargs -0 sha256sum > sha256sums.txt
+
+          make \
+            -j2 \
+            V=s
+
+
+      # ======================================================
+      # 13. Validate final firmware
+      # ======================================================
+
+      - name: Validate WH3000 Pro eMMC output
+
+        working-directory: openwrt
+
+        run: |
+
+          set -euo pipefail
+
+          DEVICE="${DEVICE:-huasifei_wh3000-pro-emmc}"
+
+
+          echo "================================================"
+          echo " Firmware outputs"
+          echo "================================================"
+
+          find \
+            bin/targets/mediatek/filogic \
+            -type f \
+            \( \
+              -name '*sysupgrade*' \
+              -o -name '*factory*' \
+              -o -name '*.itb' \
+              -o -name '*.bin' \
+            \) \
+            -print \
+            | sort
+
+
+          echo
+          echo "================================================"
+          echo " WH3000 Pro eMMC sysupgrade"
+          echo "================================================"
+
+          find \
+            bin/targets/mediatek/filogic \
+            -type f \
+            -name "*${DEVICE}*sysupgrade*" \
+            -print \
+            | sort
+
+
+          # ==================================================
+          # 必须存在 WH3000 Pro sysupgrade
+          # ==================================================
+
+          test -n "$(
+            find \
+              bin/targets/mediatek/filogic \
+              -type f \
+              -name "*${DEVICE}*sysupgrade*" \
+              -print \
+              -quit
+          )"
+
+
+          # ==================================================
+          # 明确禁止 OpenWrt One
+          # ==================================================
+
+          if find \
+              bin/targets/mediatek/filogic \
+              -type f \
+              \( \
+                -name '*openwrt_one*' \
+                -o -name '*openwrt-one*' \
+              \) \
+              -print \
+              -quit \
+              | grep -q .; then
+
+            echo
+            echo "================================================"
+            echo "❌ ERROR: openwrt_one image detected!"
+            echo "================================================"
+
+            exit 1
+          fi
+
+
+          echo
+          echo "================================================"
+          echo " Target metadata"
+          echo "================================================"
+
+          find \
+            bin/targets/mediatek/filogic \
+            -maxdepth 1 \
+            -type f \
+            \( \
+              -name 'profiles.json' \
+              -o -name 'version.buildinfo' \
+              -o -name 'config.buildinfo' \
+            \) \
+            -print \
+            -exec sh -c '
+              echo "--- $1"
+              grep -i \
+                -E "wh3000|huasifei|filogic" \
+                "$1" \
+                | head -50 || true
+            ' _ {} \;
+
+
+          echo
+          echo "================================================"
+          echo " SHA256"
+          echo "================================================"
+
+          find \
+            bin/targets \
+            -type f \
+            -print0 \
+            | xargs -0 sha256sum \
+            > sha256sums.txt
+
           cat sha256sums.txt
 
-          test -n "$(find bin/targets -type f -name '*sysupgrade*' -print -quit)"
+
+      # ======================================================
+      # 14. Collect release files
+      # ======================================================
 
       - name: Collect release files
+
         run: |
+
+          set -euo pipefail
+
+          rm -rf release
+
           mkdir -p release
-          find openwrt/bin/targets/mediatek/filogic -type f \
-            \( -name '*sysupgrade*' -o -name '*factory*' -o -name '*.itb' -o -name '*.bin' \) \
+
+
+          # ==================================================
+          # Firmware
+          # ==================================================
+
+          find \
+            openwrt/bin/targets/mediatek/filogic \
+            -type f \
+            \( \
+              -name '*sysupgrade*' \
+              -o -name '*factory*' \
+              -o -name '*.itb' \
+              -o -name '*.bin' \
+            \) \
             -exec cp -t release {} +
-          cp -a openwrt/sha256sums.txt release/ 2>/dev/null || true
+
+
+          # ==================================================
+          # SHA256
+          # ==================================================
+
+          cp \
+            openwrt/sha256sums.txt \
+            release/ \
+            2>/dev/null || true
+
+
+          # ==================================================
+          # Kernel version
+          # ==================================================
+
+          KERNEL_VERSION="$(
+            grep \
+              '^KERNEL_PATCHVER' \
+              openwrt/target/linux/mediatek/Makefile \
+              | awk -F= '
+                  {
+                    gsub(/[[:space:]]/, "", $2);
+                    print $2
+                  }
+                '
+          )"
+
+
+          # ==================================================
+          # BUILD INFO
+          # ==================================================
 
           cat > release/BUILD-INFO.txt <<EOF
-          FanchmWrt: ${FANCHMWRT_TAG}
-          Device: ${DEVICE}
-          Kernel: Linux 6.12 (FanchmWrt MediaTek Filogic)
-          Build: ${GITHUB_RUN_NUMBER}
-          Commit: ${GITHUB_SHA}
-          Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          QModem: FUjr/QModem main
-          Lucky: gdy666/luci-app-lucky main
-          EOF
+
+FanchmWrt: ${FANCHMWRT_TAG}
+
+Device: ${DEVICE}
+
+Target: mediatek/filogic
+
+Exact Profile: huasifei_wh3000-pro-emmc
+
+DTS: mt7981b-huasifei-wh3000-pro-emmc
+
+Kernel: Linux ${KERNEL_VERSION}
+
+Build: ${GITHUB_RUN_NUMBER}
+
+Commit: ${GITHUB_SHA}
+
+Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+
+QModem:
+FUjr/QModem main
+
+Lucky:
+gdy666/luci-app-lucky main
+
+Docker:
+enabled
+
+Hardware verification:
+enabled
+
+openwrt_one rejection:
+enabled
+
+EOF
+
+
+          # ==================================================
+          # TARGET VERIFY
+          # ==================================================
+
+          cat > release/TARGET-VERIFY.txt <<EOF
+
+============================================================
+WH3000 Pro eMMC build verification
+============================================================
+
+Target device:
+${DEVICE}
+
+Kconfig:
+CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_huasifei_wh3000_pro_emmc=y
+
+DTS:
+mt7981b-huasifei-wh3000-pro-emmc
+
+Image definition:
+target/linux/mediatek/image/filogic.mk
+
+Kernel:
+Linux ${KERNEL_VERSION}
+
+openwrt_one rejection:
+enabled
+
+============================================================
+
+EOF
+
+
+          echo
+          echo "================================================"
+          echo " Release files"
+          echo "================================================"
+
+          ls -lah release/
+
+
+      # ======================================================
+      # 15. Actions artifact
+      # ======================================================
 
       - name: Upload Actions artifact
+
         uses: actions/upload-artifact@v4
+
         with:
-          name: FanchmWrt-WH3000-Pro-${{ github.run_number }}
-          path: release/
+
+          name: |
+            FanchmWrt-WH3000-Pro-${{ github.run_number }}
+
+          path: |
+            release/
+
           if-no-files-found: error
+
           retention-days: 14
 
+
+      # ======================================================
+      # 16. GitHub Release
+      # ======================================================
+
       - name: Create GitHub Release
+
         if: ${{ inputs.upload_release != false && success() }}
+
         env:
+
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
         run: |
+
+          set -euo pipefail
+
+
           TAG="WH3000Pro-${FANCHMWRT_TAG}-${GITHUB_RUN_NUMBER}"
+
           TITLE="WH3000 Pro | FanchmWrt ${FANCHMWRT_TAG} | #${GITHUB_RUN_NUMBER}"
 
-          gh release create "$TAG" release/*.bin release/*.itb release/*.tar.gz release/sha256sums.txt release/BUILD-INFO.txt \
+
+          # ==================================================
+          # 不再使用可能不存在的通配符
+          # ==================================================
+
+          FILES=()
+
+          for f in release/*; do
+
+            [ -f "$f" ] && FILES+=("$f")
+
+          done
+
+
+          test "${#FILES[@]}" -gt 0
+
+
+          echo
+          echo "================================================"
+          echo " Creating GitHub Release"
+          echo "================================================"
+
+
+          gh release create \
+            "$TAG" \
+            "${FILES[@]}" \
             --title "$TITLE" \
-            --notes "FanchmWrt ${FANCHMWRT_TAG} / Huasifei WH3000 Pro eMMC / Linux 6.12 / QModem / Lucky / Docker"
+            --notes \
+            "FanchmWrt ${FANCHMWRT_TAG}
+Huasifei WH3000 Pro eMMC
+Exact hardware target verification enabled
+WH3000 Pro upstream fallback enabled
+openwrt_one rejection enabled"
