@@ -17,7 +17,7 @@ on:
 
   push:
     paths:
-      - ".github/workflows/build.yml"
+      - ".github/workflows/Wh3000pro.yml"
       - "config/**"
       - "scripts/**"
       - "custom-packages/**"
@@ -52,7 +52,7 @@ jobs:
 
       - name: Free disk space
         run: |
-          set -e
+          set -euo pipefail
 
           echo "========================================"
           echo " Free disk space"
@@ -75,7 +75,7 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          set -e
+          set -euo pipefail
 
           sudo apt-get update
 
@@ -113,6 +113,9 @@ jobs:
             java-propose-classpath \
             libpython3-dev
 
+          echo
+          echo "Build dependencies installed."
+
 
       # ==========================================================
       # 4. Restore download cache
@@ -144,7 +147,29 @@ jobs:
 
 
       # ==========================================================
-      # 6. Clone FanchmWrt
+      # 6. Configure ccache
+      # ==========================================================
+
+      - name: Configure ccache
+        run: |
+          set -euo pipefail
+
+          mkdir -p ~/.ccache
+
+          ccache --set-config=cache_dir="$HOME/.ccache"
+          ccache --set-config=max_size=5G
+
+          echo
+          echo "ccache configuration:"
+          ccache --show-config
+
+          echo
+          echo "Initial ccache statistics:"
+          ccache --show-stats || true
+
+
+      # ==========================================================
+      # 7. Clone FanchmWrt
       # ==========================================================
 
       - name: Clone FanchmWrt
@@ -166,6 +191,9 @@ jobs:
           echo
           echo "Source:"
           git log -1 --oneline
+
+          echo
+          echo "Tag:"
           git describe --tags --always
 
           echo
@@ -174,26 +202,51 @@ jobs:
 
 
       # ==========================================================
-      # 7. DIY1
+      # 8. Optional clean build
       #
-      # 顺序非常重要：
+      # 新鲜 clone 后通常没有必要。
       #
-      # DIY1
-      #   ↓
-      # QModem / Lucky feeds
-      #   ↓
-      # WH3000 Pro 硬件检查
-      #   ↓
-      # 缺失时执行 upstream fallback
-      #   ↓
-      # prepare
-      #   ↓
-      # DIY2
-      #
-      # 不再使用 DETECTED_DEVICE
+      # 如果用户手动选择 clean_build，
+      # 在 DIY1 / prepare 前清理。
       # ==========================================================
 
-      - name: DIY1 - feeds and hardware fallback
+      - name: Optional clean build
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.clean_build == true }}
+        working-directory: openwrt
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo " CLEAN BUILD"
+          echo "========================================"
+
+          make clean || true
+
+          rm -rf build_dir/target-* || true
+          rm -rf staging_dir/target-* || true
+          rm -rf tmp || true
+
+          echo
+          echo "Clean build preparation completed."
+
+
+      # ==========================================================
+      # 9. DIY1
+      #
+      # DIY1：
+      #
+      #   QModem feed
+      #       ↓
+      #   Lucky
+      #       ↓
+      #   WH3000 Pro hardware verification
+      #       ↓
+      #   必要时 upstream fallback
+      #
+      # 不使用 DETECTED_DEVICE。
+      # ==========================================================
+
+      - name: DIY1 - feeds and hardware preparation
         run: |
           set -euo pipefail
 
@@ -209,7 +262,18 @@ jobs:
 
 
       # ==========================================================
-      # 8. Prepare exact WH3000 Pro target
+      # 10. Prepare exact WH3000 Pro target
+      #
+      # prepare.sh 内部唯一一次：
+      #
+      #   make defconfig
+      #
+      # 然后：
+      #
+      #   删除 Kconfig 自动 DEVICE
+      #   强制 WH3000 Pro eMMC
+      #
+      # 从这里以后禁止再次 defconfig。
       # ==========================================================
 
       - name: Prepare exact WH3000 Pro target
@@ -217,7 +281,7 @@ jobs:
           set -euo pipefail
 
           echo "========================================"
-          echo " Prepare exact hardware target"
+          echo " Prepare exact WH3000 Pro target"
           echo "========================================"
 
           test -f scripts/prepare.sh
@@ -228,7 +292,7 @@ jobs:
 
 
       # ==========================================================
-      # 9. DIY2
+      # 11. DIY2
       # ==========================================================
 
       - name: DIY2 - custom configuration
@@ -247,7 +311,12 @@ jobs:
 
 
       # ==========================================================
-      # 10. Verify exact source hardware
+      # 12. Verify exact source hardware
+      #
+      # 这里只读源代码。
+      #
+      # 不修改 .config。
+      # 不执行 defconfig。
       # ==========================================================
 
       - name: Verify exact WH3000 Pro source target
@@ -265,19 +334,27 @@ jobs:
           echo "[1] Device definition"
 
           grep -n \
-            -A15 \
+            -A20 \
             -B2 \
             "^define Device/${DEVICE}$" \
             target/linux/mediatek/image/filogic.mk
 
-
           echo
           echo "[2] Device registration"
 
-          grep -n \
-            "^TARGET_DEVICES += ${DEVICE}$" \
-            target/linux/mediatek/image/filogic.mk
+          if grep \
+            -Eq \
+            "TARGET_DEVICES[[:space:]]*\+=.*${DEVICE}" \
+            target/linux/mediatek/image/filogic.mk; then
 
+            echo "✅ TARGET_DEVICES registration found."
+
+          else
+
+            echo "⚠️ Direct registration line not found."
+            echo "Device definition exists; continue."
+
+          fi
 
           echo
           echo "[3] eMMC DTS"
@@ -285,8 +362,7 @@ jobs:
           test -f \
             target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro-emmc.dts
 
-
-          echo "OK: eMMC DTS exists"
+          echo "✅ eMMC DTS exists."
 
 
           echo
@@ -295,8 +371,7 @@ jobs:
           test -f \
             target/linux/mediatek/dts/mt7981b-huasifei-wh3000-pro.dtsi
 
-
-          echo "OK: common DTS exists"
+          echo "✅ Common DTS exists."
 
 
           echo
@@ -326,33 +401,20 @@ jobs:
 
 
       # ==========================================================
-      # 11. Optional clean build
+      # 13. Verify LOCKED .config
+      #
+      # 极其重要：
+      #
+      # 这里绝对不能：
+      #
+      #   make defconfig
+      #   make olddefconfig
+      #   make menuconfig
+      #
+      # 这里只读取 .config。
       # ==========================================================
 
-      - name: Optional clean build
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.clean_build == true }}
-        working-directory: openwrt
-        run: |
-          set -e
-
-          echo "========================================"
-          echo " CLEAN BUILD"
-          echo "========================================"
-
-          make clean || true
-
-          rm -rf build_dir/target-* || true
-          rm -rf staging_dir/target-* || true
-          rm -rf tmp || true
-
-          echo "Clean build preparation completed."
-
-
-      # ==========================================================
-      # 12. Final target configuration
-      # ==========================================================
-
-      - name: Force and verify exact target configuration
+      - name: Verify locked WH3000 Pro target
         working-directory: openwrt
         run: |
           set -euo pipefail
@@ -363,42 +425,57 @@ jobs:
           EXPECTED="CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${DEVICE_SYMBOL}=y"
 
           echo "========================================"
-          echo " Final target configuration"
+          echo " Verify LOCKED target"
           echo "========================================"
 
           echo
           echo "Expected:"
           echo "${EXPECTED}"
 
+          echo
+          echo "IMPORTANT:"
+          echo "No make defconfig will be executed."
+
+
+          # ------------------------------------------------------
+          # 1. Exact target
+          # ------------------------------------------------------
 
           echo
-          echo "Running make defconfig..."
+          echo "[1] Verify exact target"
 
-          make defconfig
+          if ! grep \
+            -qF \
+            "${EXPECTED}" \
+            .config; then
 
-
-          echo
-          echo "Checking exact target..."
-
-          if ! grep -qF "${EXPECTED}" .config; then
             echo
-            echo "ERROR: Exact WH3000 Pro target is NOT selected."
+            echo "❌ ERROR: Exact WH3000 Pro target is NOT selected."
+
             echo
+            echo "Current selected devices:"
+
             grep \
-              "^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y" \
+              '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$' \
               .config \
               || true
 
             exit 1
           fi
 
+          echo "✅ Exact WH3000 Pro target selected."
+
+
+          # ------------------------------------------------------
+          # 2. Device count
+          # ------------------------------------------------------
 
           echo
-          echo "Checking number of selected Filogic devices..."
+          echo "[2] Verify selected device count"
 
           COUNT="$(
             grep -Ec \
-              "^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$" \
+              '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$' \
               .config \
               || true
           )"
@@ -406,39 +483,101 @@ jobs:
           echo "Selected device count: ${COUNT}"
 
           if [ "${COUNT}" -ne 1 ]; then
-            echo "ERROR: More than one Filogic device is selected."
+
+            echo
+            echo "❌ ERROR: Expected exactly ONE Filogic device."
+
+            grep \
+              '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$' \
+              .config \
+              || true
+
             exit 1
           fi
 
+          echo "✅ Exactly one Filogic device selected."
+
+
+          # ------------------------------------------------------
+          # 3. Reject OpenWrt One
+          # ------------------------------------------------------
 
           echo
-          echo "Checking OpenWrt One..."
+          echo "[3] Reject OpenWrt One"
 
-          if grep -q \
-            "^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_openwrt_one=y$" \
+          if grep \
+            -q \
+            '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_openwrt_one=y$' \
             .config; then
 
-            echo "ERROR: openwrt_one was selected!"
+            echo
+            echo "❌ ERROR: openwrt_one was selected!"
+
             exit 1
           fi
 
+          echo "✅ openwrt_one not selected."
+
+
+          # ------------------------------------------------------
+          # 4. MediaTek target
+          # ------------------------------------------------------
+
+          echo
+          echo "[4] Verify MediaTek target"
+
+          REQUIRED_CONFIGS=(
+            "CONFIG_TARGET_mediatek=y"
+            "CONFIG_TARGET_mediatek_filogic=y"
+            "CONFIG_TARGET_DEVICE_mediatek_filogic=y"
+          )
+
+          for REQUIRED in "${REQUIRED_CONFIGS[@]}"; do
+
+            if ! grep \
+              -qF \
+              "${REQUIRED}" \
+              .config; then
+
+              echo
+              echo "❌ ERROR: Missing:"
+              echo "${REQUIRED}"
+
+              exit 1
+            fi
+
+          done
+
+          echo "✅ MediaTek target verified."
+          echo "✅ Filogic target verified."
+          echo "✅ Device framework verified."
+
+
+          # ------------------------------------------------------
+          # 5. Print final target
+          # ------------------------------------------------------
 
           echo
           echo "========================================"
-          echo " FINAL TARGET"
+          echo " FINAL LOCKED TARGET"
           echo "========================================"
 
           grep \
-            "^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y" \
+            '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$' \
             .config
 
 
           echo
-          echo "Exact target verification PASSED."
+          echo "========================================"
+          echo " ✅ LOCKED TARGET VERIFICATION PASSED"
+          echo "========================================"
 
 
       # ==========================================================
-      # 13. Download source packages
+      # 14. Download source packages
+      #
+      # 注意：
+      # 不执行任何 defconfig。
       # ==========================================================
 
       - name: Download sources
@@ -465,7 +604,15 @@ jobs:
 
 
       # ==========================================================
-      # 14. Compile
+      # 15. Compile firmware
+      #
+      # WH3000 Pro：
+      #
+      #   ARM / MT7981
+      #   FanchmWrt 25.12.4
+      #   Linux 6.12
+      #
+      # 使用 -j2，优先稳定性。
       # ==========================================================
 
       - name: Compile firmware
@@ -477,10 +624,20 @@ jobs:
           echo " Compile FanchmWrt"
           echo "========================================"
 
-          echo "Device: ${DEVICE}"
+          echo
+          echo "Device:"
+          echo "${DEVICE}"
+
+          echo
+          echo "Target:"
+          grep \
+            '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$' \
+            .config
+
+          echo
           echo "Kernel:"
           grep \
-            "^KERNEL_PATCHVER" \
+            '^KERNEL_PATCHVER' \
             target/linux/mediatek/Makefile \
             || true
 
@@ -493,7 +650,7 @@ jobs:
 
 
       # ==========================================================
-      # 15. Validate firmware output
+      # 16. Validate firmware output
       # ==========================================================
 
       - name: Validate WH3000 Pro eMMC firmware
@@ -512,6 +669,10 @@ jobs:
           test -d "${TARGET_DIR}"
 
 
+          # ------------------------------------------------------
+          # All output files
+          # ------------------------------------------------------
+
           echo
           echo "All firmware outputs:"
 
@@ -527,11 +688,14 @@ jobs:
             | sort
 
 
+          # ------------------------------------------------------
+          # Exact WH3000 Pro eMMC
+          # ------------------------------------------------------
+
           echo
           echo "========================================"
           echo " Looking for exact WH3000 Pro eMMC"
           echo "========================================"
-
 
           mapfile -t SYSUPGRADE_FILES < <(
             find "${TARGET_DIR}" \
@@ -543,13 +707,18 @@ jobs:
 
 
           if [ "${#SYSUPGRADE_FILES[@]}" -eq 0 ]; then
+
             echo
-            echo "ERROR: WH3000 Pro eMMC sysupgrade firmware was NOT found."
+            echo "❌ ERROR:"
+            echo "WH3000 Pro eMMC sysupgrade firmware was NOT found."
+
             echo
             echo "Expected device:"
             echo "${DEVICE}"
+
             echo
             echo "Available files:"
+
             find "${TARGET_DIR}" \
               -type f \
               -print \
@@ -560,17 +729,17 @@ jobs:
 
 
           echo
-          echo "WH3000 Pro eMMC firmware found:"
+          echo "✅ WH3000 Pro eMMC firmware found:"
 
           printf '%s\n' "${SYSUPGRADE_FILES[@]}"
 
 
-          # ======================================================
-          # Reject OpenWrt One
-          # ======================================================
+          # ------------------------------------------------------
+          # Reject OpenWrt One image
+          # ------------------------------------------------------
 
           echo
-          echo "Checking for forbidden OpenWrt One image..."
+          echo "Checking forbidden OpenWrt One image..."
 
           if find "${TARGET_DIR}" \
               -type f \
@@ -583,14 +752,17 @@ jobs:
               | grep -q .; then
 
             echo
-            echo "ERROR: openwrt_one image detected!"
+            echo "❌ ERROR: openwrt_one image detected!"
+
             exit 1
           fi
 
+          echo "✅ No OpenWrt One image detected."
 
-          # ======================================================
-          # Profiles
-          # ======================================================
+
+          # ------------------------------------------------------
+          # Target metadata
+          # ------------------------------------------------------
 
           echo
           echo "========================================"
@@ -602,22 +774,28 @@ jobs:
             "${TARGET_DIR}/version.buildinfo" \
             "${TARGET_DIR}/config.buildinfo"
           do
+
             if [ -f "${file}" ]; then
+
               echo
               echo "--- ${file}"
 
-              grep -i \
-                -E "wh3000|huasifei|filogic" \
+              grep \
+                -i \
+                -E \
+                "wh3000|huasifei|filogic" \
                 "${file}" \
                 | head -50 \
                 || true
+
             fi
+
           done
 
 
-          # ======================================================
+          # ------------------------------------------------------
           # SHA256
-          # ======================================================
+          # ------------------------------------------------------
 
           echo
           echo "========================================"
@@ -636,12 +814,12 @@ jobs:
 
           echo
           echo "========================================"
-          echo " FIRMWARE VALIDATION PASSED"
+          echo " ✅ FIRMWARE VALIDATION PASSED"
           echo "========================================"
 
 
       # ==========================================================
-      # 16. Collect release files
+      # 17. Collect release files
       # ==========================================================
 
       - name: Collect release files
@@ -653,12 +831,13 @@ jobs:
           echo "========================================"
 
           rm -rf release
+
           mkdir -p release
 
 
-          # ======================================================
+          # ------------------------------------------------------
           # Firmware
-          # ======================================================
+          # ------------------------------------------------------
 
           find \
             openwrt/bin/targets/mediatek/filogic \
@@ -672,24 +851,26 @@ jobs:
             -exec cp -t release {} +
 
 
-          # ======================================================
+          # ------------------------------------------------------
           # SHA256
-          # ======================================================
+          # ------------------------------------------------------
 
           if [ -f openwrt/sha256sums.txt ]; then
+
             cp \
               openwrt/sha256sums.txt \
               release/
+
           fi
 
 
-          # ======================================================
+          # ------------------------------------------------------
           # Kernel version
-          # ======================================================
+          # ------------------------------------------------------
 
           KERNEL_VERSION="$(
             grep \
-              "^KERNEL_PATCHVER" \
+              '^KERNEL_PATCHVER' \
               openwrt/target/linux/mediatek/Makefile \
               | awk -F= '
                 {
@@ -700,90 +881,101 @@ jobs:
           )"
 
 
-          # ======================================================
+          # ------------------------------------------------------
           # BUILD INFO
-          # ======================================================
+          # ------------------------------------------------------
 
           cat > release/BUILD-INFO.txt <<EOF
-          FanchmWrt: ${FANCHMWRT_TAG}
+FanchmWrt: ${FANCHMWRT_TAG}
 
-          Device: ${DEVICE}
+Device: ${DEVICE}
 
-          Target: mediatek/filogic
+Target: mediatek/filogic
 
-          Exact Profile: huasifei_wh3000-pro-emmc
+Exact Profile:
+huasifei_wh3000-pro-emmc
 
-          Kconfig:
-          CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_huasifei_wh3000_pro_emmc=y
+Kconfig:
+CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_huasifei_wh3000_pro_emmc=y
 
-          DTS:
-          mt7981b-huasifei-wh3000-pro-emmc
+DTS:
+mt7981b-huasifei-wh3000-pro-emmc
 
-          Kernel: Linux ${KERNEL_VERSION}
+Kernel:
+Linux ${KERNEL_VERSION}
 
-          Build Number: ${GITHUB_RUN_NUMBER}
+Build Number:
+${GITHUB_RUN_NUMBER}
 
-          Commit: ${GITHUB_SHA}
+Commit:
+${GITHUB_SHA}
 
-          Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+Date:
+$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
-          QModem:
-          FUjr/QModem main
+QModem:
+FUjr/QModem main
 
-          Lucky:
-          gdy666/luci-app-lucky main
+Lucky:
+gdy666/luci-app-lucky main
 
-          Docker:
-          enabled
+Docker:
+enabled
 
-          Hardware verification:
-          enabled
+Hardware verification:
+enabled
 
-          OpenWrt One rejection:
-          enabled
+OpenWrt One rejection:
+enabled
 
-          WH3000 Pro upstream fallback:
-          enabled
-          EOF
+Target locking:
+enabled
+
+Post-prepare defconfig:
+DISABLED
+EOF
 
 
-          # ======================================================
+          # ------------------------------------------------------
           # TARGET VERIFY
-          # ======================================================
+          # ------------------------------------------------------
 
           cat > release/TARGET-VERIFY.txt <<EOF
-          ============================================================
-          FanchmWrt WH3000 Pro eMMC Hardware Verification
-          ============================================================
+============================================================
+FanchmWrt WH3000 Pro eMMC Hardware Verification
+============================================================
 
-          Target:
-          ${DEVICE}
+Target:
+${DEVICE}
 
-          Platform:
-          mediatek/filogic
+Platform:
+mediatek/filogic
 
-          Kconfig:
-          CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_huasifei_wh3000_pro_emmc=y
+Kconfig:
+CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_huasifei_wh3000_pro_emmc=y
 
-          DTS:
-          mt7981b-huasifei-wh3000-pro-emmc
+DTS:
+mt7981b-huasifei-wh3000-pro-emmc
 
-          Kernel:
-          Linux ${KERNEL_VERSION}
+Kernel:
+Linux ${KERNEL_VERSION}
 
-          OpenWrt One rejection:
-          enabled
+OpenWrt One rejection:
+enabled
 
-          Upstream hardware fallback:
-          enabled
+Target locking:
+enabled
 
-          ============================================================
-          EOF
+Post-prepare defconfig:
+DISABLED
+
+============================================================
+EOF
 
 
-          # ======================================================
+          # ------------------------------------------------------
           # Release file check
-          # ======================================================
+          # ------------------------------------------------------
 
           echo
           echo "Release files:"
@@ -800,17 +992,37 @@ jobs:
               | grep -q .; then
 
             echo
-            echo "ERROR: Exact WH3000 Pro sysupgrade file was not copied."
+            echo "❌ ERROR:"
+            echo "Exact WH3000 Pro sysupgrade file was not copied."
+
             exit 1
           fi
 
 
           echo
-          echo "Release collection PASSED."
+          echo "========================================"
+          echo " ✅ RELEASE COLLECTION PASSED"
+          echo "========================================"
 
 
       # ==========================================================
-      # 17. Upload Actions artifact
+      # 18. Show ccache statistics
+      # ==========================================================
+
+      - name: Show ccache statistics
+        if: always()
+        run: |
+          set +e
+
+          echo "========================================"
+          echo " ccache statistics"
+          echo "========================================"
+
+          ccache --show-stats || true
+
+
+      # ==========================================================
+      # 19. Upload Actions artifact
       # ==========================================================
 
       - name: Upload Actions artifact
@@ -823,7 +1035,7 @@ jobs:
 
 
       # ==========================================================
-      # 18. GitHub Release
+      # 20. GitHub Release
       # ==========================================================
 
       - name: Create GitHub Release
@@ -837,14 +1049,15 @@ jobs:
           echo " Create GitHub Release"
           echo "========================================"
 
+
           TAG="WH3000Pro-${FANCHMWRT_TAG}-${GITHUB_RUN_NUMBER}"
 
           TITLE="WH3000 Pro | FanchmWrt ${FANCHMWRT_TAG} | #${GITHUB_RUN_NUMBER}"
 
 
-          # ======================================================
+          # ------------------------------------------------------
           # Collect files safely
-          # ======================================================
+          # ------------------------------------------------------
 
           FILES=()
 
@@ -860,7 +1073,10 @@ jobs:
 
 
           if [ "${#FILES[@]}" -eq 0 ]; then
-            echo "ERROR: No release files found."
+
+            echo
+            echo "❌ ERROR: No release files found."
+
             exit 1
           fi
 
@@ -871,55 +1087,62 @@ jobs:
           printf '  %s\n' "${FILES[@]}"
 
 
-          # ======================================================
+          # ------------------------------------------------------
           # Release notes
-          # ======================================================
+          # ------------------------------------------------------
 
           NOTES_FILE="$(mktemp)"
 
+
           cat > "${NOTES_FILE}" <<EOF
-          FanchmWrt ${FANCHMWRT_TAG}
+FanchmWrt ${FANCHMWRT_TAG}
 
-          Huasifei WH3000 Pro eMMC
+Huasifei WH3000 Pro eMMC
 
-          Exact hardware target:
-          ${DEVICE}
+Exact hardware target:
+${DEVICE}
 
-          Target:
-          mediatek/filogic
+Target:
+mediatek/filogic
 
-          DTS:
-          mt7981b-huasifei-wh3000-pro-emmc
+DTS:
+mt7981b-huasifei-wh3000-pro-emmc
 
-          QModem:
-          FUjr/QModem main
+Kernel:
+Linux ${KERNEL_VERSION:-unknown}
 
-          Lucky:
-          gdy666/luci-app-lucky main
+QModem:
+FUjr/QModem main
 
-          Docker:
-          enabled
+Lucky:
+gdy666/luci-app-lucky main
 
-          Hardware target verification:
-          enabled
+Docker:
+enabled
 
-          OpenWrt One rejection:
-          enabled
+Hardware target verification:
+enabled
 
-          WH3000 Pro upstream fallback:
-          enabled
+OpenWrt One rejection:
+enabled
 
-          Build number:
-          ${GITHUB_RUN_NUMBER}
+Target locking:
+enabled
 
-          Commit:
-          ${GITHUB_SHA}
-          EOF
+Post-prepare defconfig:
+DISABLED
+
+Build number:
+${GITHUB_RUN_NUMBER}
+
+Commit:
+${GITHUB_SHA}
+EOF
 
 
-          # ======================================================
+          # ------------------------------------------------------
           # Create Release
-          # ======================================================
+          # ------------------------------------------------------
 
           gh release create \
             "${TAG}" \
@@ -933,8 +1156,9 @@ jobs:
 
           echo
           echo "========================================"
-          echo " GitHub Release created successfully"
+          echo " ✅ GitHub Release created successfully"
           echo "========================================"
 
+          echo
           echo "Release tag:"
           echo "${TAG}"
