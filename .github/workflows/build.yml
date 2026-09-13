@@ -1,15 +1,15 @@
-name: 馃彮 FanchmWrt WH3000 Pro 鑷姩缂栬瘧
+name: 🏭 FanchmWrt WH3000 Pro 自动编译
 
 on:
   workflow_dispatch:
     inputs:
       clean_build:
-        description: '娓呯悊缂栬瘧鐩綍鍚庨噸鏂扮紪璇�'
+        description: '清理编译目录后重新编译'
         required: true
         default: false
         type: boolean
       upload_release:
-        description: '缂栬瘧鎴愬姛鍚庤嚜鍔ㄥ垱寤� GitHub Release'
+        description: '编译成功后自动创建 GitHub Release'
         required: true
         default: true
         type: boolean
@@ -174,4 +174,3 @@ jobs:
           gh release create "$TAG" release/*.bin release/*.itb release/*.tar.gz release/sha256sums.txt release/BUILD-INFO.txt \
             --title "$TITLE" \
             --notes "FanchmWrt ${FANCHMWRT_TAG} / Huasifei WH3000 Pro eMMC / Linux 6.12 / QModem / Lucky / Docker"
-
