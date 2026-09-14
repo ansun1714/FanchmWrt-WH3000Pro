@@ -70,6 +70,14 @@ echo 'src-git rtp2httpd https://github.com/stackia/rtp2httpd.git' \
 
 echo "RTP2HTTPD feed added:"
 echo "  https://github.com/stackia/rtp2httpd.git"
+# ─── 直接克隆到 package 目录 ──────────────────────────────
+
+git clone --depth=1 \
+    https://github.com/ximiTech/msd_lite \
+    package/msd_lite
+
+cp -r "${GITHUB_WORKSPACE}/custom-packages/luci-app-iptv-manager" \
+    package/luci-app-iptv-manager
 
 # ============================================================
 # Lucky
