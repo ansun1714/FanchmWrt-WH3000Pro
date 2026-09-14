@@ -1,1 +1,164 @@
-fdfh
+#!/bin/sh /etc/rc.common
+
+START=95
+STOP=15
+USE_PROCD=1
+
+CONFIG_NAME="iptv_manager"
+
+_load_global() {
+	config_get ENABLED global enabled '0'
+	config_get PROGRAM global program 'rtp2httpd'
+}
+
+# ── 确保 unicast_settings 配置节存在 ─────────────────────────
+# 旧固件升级后 /etc/config/iptv_manager 可能缺少此节，
+# 导致 LuCI 页面中 DDNS 输入框不显示。
+_ensure_unicast_settings() {
+	uci -q get iptv_manager.unicast_settings >/dev/null 2>&1 && return 0
+	uci -q set iptv_manager.unicast_settings='unicast_proxy'
+	uci -q set iptv_manager.unicast_settings.ddns_host=''
+	uci -q commit iptv_manager
+	logger -t iptv_manager "已自动创建 unicast_settings 配置节"
+}
+
+# ── msd_lite ──────────────────────────────────────────────────
+_start_msd() {
+	if [ ! -f /etc/init.d/msd_lite ]; then
+		logger -t iptv_manager -p daemon.err "找不到 /etc/init.d/msd_lite"
+		return 1
+	fi
+	uci -q set msd_lite.config.enable='1'
+	uci -q commit msd_lite
+	/etc/init.d/msd_lite start
+	logger -t iptv_manager -p daemon.info "启动 msd_lite"
+}
+
+_stop_msd() {
+	[ -f /etc/init.d/msd_lite ] && /etc/init.d/msd_lite stop
+	uci -q set msd_lite.config.enable='0'
+	uci -q commit msd_lite
+	logger -t iptv_manager -p daemon.info "停止 msd_lite"
+}
+
+# ── rtp2HTTPd ─────────────────────────────────────────────────
+_start_rtp2httpd() {
+	if [ ! -f /etc/init.d/rtp2httpd ]; then
+		logger -t iptv_manager -p daemon.err "找不到 /etc/init.d/rtp2httpd"
+		return 1
+	fi
+	uci -q set rtp2httpd.@rtp2httpd[0].disabled='0'
+	uci -q commit rtp2httpd
+	/etc/init.d/rtp2httpd start
+	logger -t iptv_manager -p daemon.info "启动 rtp2HTTPd"
+}
+
+_stop_rtp2httpd() {
+	[ -f /etc/init.d/rtp2httpd ] && /etc/init.d/rtp2httpd stop
+	uci -q set rtp2httpd.@rtp2httpd[0].disabled='1'
+	uci -q commit rtp2httpd
+	logger -t iptv_manager -p daemon.info "停止 rtp2HTTPd"
+}
+
+# ── 单播代理（socat）──────────────────────────────────────────
+_add_unicast_fw() {
+	local cfg="$1" listen_port="$2" name="$3"
+	local sec="iptv_unicast_fw_${cfg}"
+	uci -q delete firewall.$sec 2>/dev/null
+	uci set firewall.$sec='rule'
+	uci set firewall.$sec.name="IPTV-Unicast-${name:-$cfg}"
+	uci set firewall.$sec.src='wan'
+	uci set firewall.$sec.proto='tcp'
+	uci set firewall.$sec.dest_port="$listen_port"
+	uci set firewall.$sec.target='ACCEPT'
+}
+
+_remove_unicast_fw() {
+	uci -q delete firewall.iptv_unicast_fw_${1} 2>/dev/null
+}
+
+_start_unicast_rule() {
+	local cfg="$1"
+	local enable name upstream_host upstream_port listen_port wan_access
+
+	config_get_bool enable     "$cfg" enable 0
+	config_get name            "$cfg" name "$cfg"
+	config_get upstream_host   "$cfg" upstream_host
+	config_get upstream_port   "$cfg" upstream_port
+	config_get listen_port     "$cfg" listen_port
+	config_get_bool wan_access "$cfg" wan_access 0
+
+	_remove_unicast_fw "$cfg"
+
+	[ "$enable" -eq 1 ] || return 0
+	[ -n "$upstream_host" ] || return 0
+	[ -n "$upstream_port" ] || return 0
+	[ -n "$listen_port" ]   || return 0
+
+	procd_open_instance "unicast_${cfg}"
+	procd_set_param command /usr/bin/socat \
+		TCP-LISTEN:${listen_port},fork,reuseaddr,nodelay,keepalive \
+		TCP:${upstream_host}:${upstream_port},keepalive
+	procd_set_param respawn
+	procd_set_param stderr 1
+	procd_close_instance
+
+	[ "$wan_access" -eq 1 ] && _add_unicast_fw "$cfg" "$listen_port" "$name"
+}
+
+_stop_unicast_rule_fw() {
+	_remove_unicast_fw "$1"
+}
+
+_start_unicast_proxy() {
+	config_foreach _start_unicast_rule unicast_rule
+	uci commit firewall
+	/etc/init.d/firewall reload >/dev/null 2>&1
+}
+
+_stop_unicast_proxy() {
+	config_foreach _stop_unicast_rule_fw unicast_rule
+	uci commit firewall
+	/etc/init.d/firewall reload >/dev/null 2>&1
+}
+
+# ── procd 回调 ────────────────────────────────────────────────
+start_service() {
+	config_load "$CONFIG_NAME"
+	_load_global
+
+	# 确保 DDNS 配置节存在（升级旧固件后可能缺失）
+	_ensure_unicast_settings
+
+	_start_unicast_proxy
+
+	[ "$ENABLED" = "1" ] || {
+		logger -t iptv_manager "未启用，跳过"
+		return 0
+	}
+
+	case "$PROGRAM" in
+		msd)       _start_msd       ;;
+		rtp2httpd) _start_rtp2httpd ;;
+		*)
+			logger -t iptv_manager -p daemon.err "未知程序：$PROGRAM"
+			;;
+	esac
+}
+
+stop_service() {
+	_stop_msd
+	_stop_rtp2httpd
+	_stop_unicast_proxy
+	logger -t iptv_manager "IPTV Manager 停止"
+}
+
+service_triggers() {
+	procd_add_reload_trigger "$CONFIG_NAME"
+	procd_add_reload_trigger "rtp2httpd"
+}
+
+reload_service() {
+	stop
+	start
+}
