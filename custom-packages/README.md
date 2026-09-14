@@ -1,20 +1,17 @@
-# 后续自定义软件包
+# custom-packages
 
-第一版没有把以下包硬塞进固件：
+固件自定义软件包目录，编译时自动复制进 MWRT 源码的 `package/` 目录。
 
-- msd_lite
-- rtp2httpd
-- luci-app-iptv-manager / IPTV Combo
+## 目录结构
+custom-packages/
+└── luci-app-iptv-manager/   # IPTV 管理器（msd_lite / rtp2HTTPd 二合一界面）
+## 说明
 
-原因是这次首先验证 FanchmWrt 原生 WH3000 Pro eMMC 支持和 QModem。
+- msd_lite 主程序：由 diy-part1.sh 直接 git clone 到 package/msd_lite
+- rtp2httpd 主程序：由 diy-part1.sh 通过 feeds 引入
+- luci-app-iptv-manager：本目录提供，统一管理界面
 
-等第一版成功启动后，把你之前使用的：
-`custom-packages/luci-app-iptv-manager`
-完整目录上传/放回这里，再加入编译。
-
-MSD Lite 可参考：
-https://github.com/ximiTech/msd_lite
-
-rtp2httpd：
-https://github.com/stackia/rtp2httpd
-
+## 在 .config 中启用
+CONFIG_PACKAGE_msd_lite=y
+CONFIG_PACKAGE_rtp2httpd=y
+CONFIG_PACKAGE_luci-app-iptv-manager=y
