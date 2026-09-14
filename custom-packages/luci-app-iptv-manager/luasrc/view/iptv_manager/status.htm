@@ -1,0 +1,153 @@
+<%
+local sys = require("luci.sys")
+
+local function running(name)
+    return sys.call("pgrep -f '" .. name .. "' >/dev/null 2>&1") == 0
+end
+
+local msd_ok = running("msd_lite")
+local rtp_ok = running("rtp2httpd")
+local soc_ok = running("socat")
+
+local function dot(ok)
+    if ok then return "<span style='color:#22c55e'>&#9679;</span>"
+    else        return "<span style='color:#d1d5db'>&#9675;</span>"
+    end
+end
+%>
+
+<div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;
+            padding:6px 4px 10px;border-bottom:1px solid #e5e7eb;
+            margin-bottom:6px;font-size:13px;color:#374151">
+    <span><%=dot(msd_ok)%> msd_lite</span>
+    <span><%=dot(rtp_ok)%> rtp2HTTPd</span>
+    <span><%=dot(soc_ok)%> <%:单播代理%></span>
+    <button onclick="location.reload()" class="cbi-button"
+        style="margin-left:auto;padding:2px 10px;font-size:12px">
+        &#8635; <%:刷新%>
+    </button>
+</div>
+
+<style>
+/* 代理规则表格：移动端横向滑动 */
+.cbi-section-table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+}
+.cbi-section-table th,
+.cbi-section-table td {
+    white-space: nowrap;
+    vertical-align: middle;
+    padding: 4px 6px;
+}
+</style>
+
+<script type="text/javascript">
+/*!
+ * 移动端侧边栏初始关闭
+ *
+ * 策略（解决汉堡失效问题）：
+ *   1. 注入临时 CSS 隐藏侧边栏（不绑定任何点击事件）
+ *   2. window.load 后连续关闭 3 次（防 LuCI JS 在 load 时展开）
+ *   3. 800ms 后移除临时 CSS，将控制权完全还给 LuCI
+ *   4. 之后汉堡按钮由 LuCI 自己的逻辑处理，我们不再干预
+ */
+(function () {
+    if (window.innerWidth > 1200) return;
+
+    /* ── 临时隐藏 CSS（阶段性拦截，不是永久覆盖）────── */
+    var STYLE_ID = 'iptv-init-sidebar-hide';
+    var style = document.createElement('style');
+    style.id  = STYLE_ID;
+    style.textContent =
+        /* aside 型（新版 luci-theme-bootstrap）*/
+        'aside.main-navigation,' +
+        'aside.navigation,' +
+        'aside#mainmenu {' +
+        '  transform:translateX(-100%)!important;' +
+        '  visibility:hidden!important;' +
+        '}' +
+        /* nav/div 型（旧/中版本）*/
+        'nav#mainmenu,' +
+        'div#mainmenu,' +
+        'nav.main-menu,' +
+        'div.main-menu,' +
+        'nav.navigation,' +
+        '.sidebar {' +
+        '  display:none!important;' +
+        '}' +
+        /* 内容区填满宽度 */
+        '#maincontent,#maincontent-left,' +
+        '.main-content,main,#content {' +
+        '  margin-left:0!important;' +
+        '  max-width:100%!important;' +
+        '}';
+
+    function injectStyle() {
+        if (!document.getElementById(STYLE_ID)) {
+            document.head.appendChild(style);
+        }
+    }
+
+    /* 尽早注入 */
+    if (document.head) {
+        injectStyle();
+    } else {
+        document.addEventListener('DOMContentLoaded', injectStyle);
+    }
+
+    /* ── 关闭侧边栏状态（不绑定汉堡，只做状态重置）── */
+    function closeNav() {
+        /* class 型 */
+        document.querySelectorAll('nav,aside,div#mainmenu,.main-menu').forEach(
+            function (el) {
+                ['open','show','active','expanded','in'].forEach(function (c) {
+                    el.classList.remove(c);
+                });
+            }
+        );
+        /* body class 型 */
+        ['sidebar-open','nav-open','menu-open','has-overlay',
+         'navigation-open','overlay-active'].forEach(function (c) {
+            document.body.classList.remove(c);
+        });
+        /* checkbox 型（隐藏的导航 checkbox）*/
+        document.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+            if (!cb.checked) return;
+            if (cb.form || cb.closest('.cbi-section,.cbi-value,form,table')) return;
+            var r = cb.getBoundingClientRect();
+            if (!r.width || !r.height ||
+                getComputedStyle(cb).display === 'none') {
+                cb.checked = false;
+                cb.dispatchEvent(new Event('change', {bubbles: true}));
+            }
+        });
+    }
+
+    /* ── 移除临时 CSS，将控制权交回 LuCI ──────────── */
+    function handOffToLuci() {
+        closeNav(); /* 移除前最后关一次，确保处于关闭状态 */
+        var el = document.getElementById(STYLE_ID);
+        if (el && el.parentNode) el.parentNode.removeChild(el);
+        /*
+         * 至此：
+         *   - 侧边栏处于关闭状态
+         *   - 临时 CSS 已移除
+         *   - LuCI 的汉堡按钮逻辑不再被我们的 !important 阻挡
+         *   - 用户点汉堡可正常打开/关闭侧边栏
+         */
+    }
+
+    /* ── 执行时序 ─────────────────────────────────── */
+    window.addEventListener('load', function () {
+        /* load 后连续关闭 3 次（覆盖 LuCI 懒加载 JS 的展开操作）*/
+        [0, 200, 500].forEach(function (d) {
+            setTimeout(closeNav, d);
+        });
+        /* 800ms 后移交控制权 */
+        setTimeout(handOffToLuci, 800);
+    });
+})();
+</script>
